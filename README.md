@@ -114,6 +114,15 @@ then games still save, just without those details) and
 [`supabase/upgrade-2.sql`](supabase/upgrade-2.sql) (puzzle ratings; until then
 they stay in each browser).
 
+### Installing and offline play
+
+The public site can be installed as an app (Chrome and Edge offer an
+**Install the app** button on the Home tab; on iPhone use Share → Add to
+Home Screen). A service worker (`chessbot/web/sw.js`, filled in by
+`build-site` with the file list and a version hash) caches the site and the
+Python engine after the first visit, so games, puzzles and lessons work
+offline. Games finished offline are saved when the connection returns.
+
 ### Puzzles
 
 `scripts/generate_puzzles.py` builds `chessbot/web/puzzles.json` the way

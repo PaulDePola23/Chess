@@ -11,6 +11,7 @@ holds the source of chessbot and python-chess for Pyodide to import.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from importlib import resources
 from pathlib import Path
@@ -69,11 +70,35 @@ def build_site(out_dir: str | Path, stats_url: str | None = None, stats_key: str
         page = page.replace(old, new)
 
     (out / "index.html").write_text(page)
-    for name in ["app.js", "style.css", "pyodide-backend.js", "lessons.json", "showcase.json", "puzzles.json"]:
+    for name in [
+        "app.js",
+        "style.css",
+        "pyodide-backend.js",
+        "lessons.json",
+        "showcase.json",
+        "puzzles.json",
+        "manifest.webmanifest",
+    ]:
         (out / name).write_text(web.joinpath(name).read_text())
+    (out / "icons").mkdir(exist_ok=True)
+    for icon in web.joinpath("icons").iterdir():
+        (out / "icons" / icon.name).write_bytes(icon.read_bytes())
     (out / "pieces.js").write_text(pieces_js())
-    (out / "config.js").write_text(config_js(stats_url, stats_key))
+    (out / "config.js").write_text(config_js(stats_url, stats_key, offline=True))
     (out / "python.json").write_text(json.dumps(python_sources()))
+    write_service_worker(out, web.joinpath("sw.js").read_text())
     # Serve files as they are; GitHub Pages would otherwise run them through Jekyll.
     (out / ".nojekyll").write_text("")
     return out
+
+
+def write_service_worker(out: Path, template: str) -> None:
+    """Write sw.js with the list of files to cache and a version that changes with them."""
+    files = sorted(p.relative_to(out).as_posix() for p in out.rglob("*") if p.is_file() and p.name != "sw.js")
+    digest = hashlib.sha256()
+    for name in files:
+        digest.update(name.encode())
+        digest.update((out / name).read_bytes())
+    app_files = ["./", *(name for name in files if not name.startswith("."))]
+    worker = template.replace("__VERSION__", digest.hexdigest()[:12]).replace("__APP_FILES__", json.dumps(app_files))
+    (out / "sw.js").write_text(worker)

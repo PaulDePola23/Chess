@@ -1,0 +1,16 @@
+{
+  "name": "Paul's Chess",
+  "short_name": "Paul's Chess",
+  "description": "Play chess against a bot at seven levels, solve rated puzzles and learn the basics.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#e7ebee",
+  "theme_color": "#e7ebee",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}

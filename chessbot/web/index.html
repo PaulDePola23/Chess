@@ -4,7 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Paul's Chess</title>
-<link rel="icon" href="data:,">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="icon" href="icons/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#e7ebee" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0f1418" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-title" content="Paul's Chess">
+<meta name="description" content="Play chess against a bot at seven levels, solve rated puzzles, learn the basics and see how you rank.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
@@ -38,6 +45,8 @@
     </button>
   </header>
 
+  <p class="offline-banner" id="offline-banner" role="status" hidden>You're offline. You can keep playing; finished games are saved and uploaded when you're back online.</p>
+
   <!-- Home -->
   <main class="home" id="view-home" data-view="home" hidden>
     <section class="hero">
@@ -51,6 +60,10 @@
           <a class="button" href="#learn">Start the lessons</a>
           <a class="text-link" href="#stats">See the leaderboard</a>
         </div>
+        <p class="install-note" id="install-note" hidden>
+          <button type="button" class="button" id="install-app">Install the app</button>
+          <span id="install-text">It opens like an app and plays offline.</span>
+        </p>
         <p class="hero-credit">Made by <a href="https://github.com/PaulDePola23">Paul DePola</a>, built with Claude Code.</p>
         <p class="hero-live" id="home-live" hidden></p>
       </div>

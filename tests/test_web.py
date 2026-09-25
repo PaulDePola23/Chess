@@ -294,3 +294,38 @@ def test_api_replay(server):
     status, _, body = request(server + "/api/replay", {"moves": ["e2e4", "e7e5"]})
     assert status == 200
     assert json.loads(body)["san"] == ["e4", "e5"]
+
+
+def test_site_is_installable_and_works_offline(tmp_path):
+    from chessbot.site import build_site
+
+    site = build_site(tmp_path / "site")
+    manifest = json.loads((site / "manifest.webmanifest").read_text())
+    assert manifest["name"] == "Paul's Chess" and manifest["display"] == "standalone"
+    for icon in manifest["icons"]:
+        assert (site / icon["src"]).stat().st_size > 0
+    worker = (site / "sw.js").read_text()
+    assert "__VERSION__" not in worker and "__APP_FILES__" not in worker
+    app_files = json.loads(worker.split("const APP_FILES = ", 1)[1].split(";\n", 1)[0])
+    assert {"./", "index.html", "app.js", "python.json", "puzzles.json", "icons/icon-192.png"} <= set(app_files)
+    assert all((site / name).exists() for name in app_files if name != "./")
+    config = json.loads((site / "config.js").read_text().split("=", 1)[1].strip().rstrip(";"))
+    assert config["offline"] is True
+    # The version changes when any file does, so installed copies update.
+    from importlib import resources
+
+    from chessbot.site import write_service_worker
+
+    (site / "puzzles.json").write_text("[]")
+    write_service_worker(site, resources.files("chessbot").joinpath("web", "sw.js").read_text())
+    assert (site / "sw.js").read_text() != worker
+
+
+def test_server_serves_icons_and_manifest(server):
+    status, content_type, body = request(server + "/icons/icon-192.png")
+    assert status == 200 and content_type == "image/png" and body[:4] == b"\x89PNG"
+    assert request(server + "/manifest.webmanifest")[0] == 200
+    assert request(server + "/icons/../server.py")[0] == 404
+    assert request(server + "/icons/missing.png")[0] == 404
+    config = json.loads(request(server + "/config.js")[2].decode().split("=", 1)[1].strip().rstrip(";"))
+    assert config["offline"] is False  # no service worker for the local server

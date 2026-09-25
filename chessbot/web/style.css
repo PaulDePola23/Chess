@@ -1043,3 +1043,14 @@ button.primary:hover:not(:disabled) { border-color: var(--ink); }
 .trainer-stats dt { font: 600 11px/1.2 var(--sans); text-transform: uppercase; letter-spacing: 0.09em; color: var(--muted); }
 .trainer-stats dd { margin: 0; font: 600 20px var(--mono); font-variant-numeric: tabular-nums; }
 .trainer-note { margin: 0; font-size: 13px; color: var(--muted); }
+
+/* Installing and offline */
+.install-note { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 18px 0 0; font-size: 14px; color: var(--muted); }
+.offline-banner {
+  margin: 0;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-2);
+  font-size: 14px;
+}

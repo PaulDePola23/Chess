@@ -158,6 +158,7 @@
 
     return {
       shared: true,
+      flush: flushPending,
       // Puzzle attempts need the puzzle_attempts table (supabase/upgrade-2.sql);
       // without it they stay in this browser only.
       async listPuzzleAttempts() {
@@ -2318,6 +2319,49 @@
     mainBoard.deselect();
     puzzleBoard.deselect();
   });
+
+  // ------------------------------------------------------------ install and offline
+
+  // The static site registers a service worker so it can be installed and
+  // opened offline (see sw.js). The local server doesn't, to avoid stale files.
+  if (CONFIG.offline && "serviceWorker" in navigator) {
+    window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
+  }
+
+  let installPrompt = null;
+  window.addEventListener("beforeinstallprompt", (event) => {
+    event.preventDefault();
+    installPrompt = event;
+    $("install-note").hidden = false;
+    $("install-app").hidden = false;
+    $("install-text").textContent = "It opens like an app and plays offline.";
+  });
+  window.addEventListener("appinstalled", () => ($("install-note").hidden = true));
+  $("install-app").addEventListener("click", async () => {
+    if (!installPrompt) return;
+    installPrompt.prompt();
+    await installPrompt.userChoice.catch(() => null);
+    installPrompt = null;
+    $("install-note").hidden = true;
+  });
+  // iPhones and iPads have no install prompt; tell people how to do it by hand.
+  const standalone = window.matchMedia && window.matchMedia("(display-mode: standalone)").matches;
+  if (CONFIG.offline && /iPhone|iPad|iPod/.test(navigator.userAgent) && !standalone && !navigator.standalone) {
+    $("install-note").hidden = false;
+    $("install-app").hidden = true;
+    $("install-text").textContent = "To install it, tap the Share button, then Add to Home Screen.";
+  }
+
+  function renderOnline() {
+    $("offline-banner").hidden = navigator.onLine !== false;
+  }
+  window.addEventListener("offline", renderOnline);
+  window.addEventListener("online", () => {
+    renderOnline();
+    if (stats.flush) stats.flush().catch(() => {});
+    statsCache = null;
+  });
+  renderOnline();
 
   // ------------------------------------------------------------ start
 

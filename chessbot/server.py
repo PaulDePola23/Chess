@@ -40,7 +40,9 @@ STATIC_FILES = {
     "/lessons.json": ("lessons.json", "application/json"),
     "/showcase.json": ("showcase.json", "application/json"),
     "/puzzles.json": ("puzzles.json", "application/json"),
+    "/manifest.webmanifest": ("manifest.webmanifest", "application/manifest+json"),
 }
+ICON_TYPES = {".png": "image/png", ".svg": "image/svg+xml"}
 MAX_BODY = 1_000_000
 
 
@@ -53,7 +55,7 @@ def pieces_js() -> str:
     return "window.CHESSBOT_PIECES = " + json.dumps(pieces) + ";\n"
 
 
-def config_js(stats_url: str | None = None, stats_key: str | None = None) -> str:
+def config_js(stats_url: str | None = None, stats_key: str | None = None, offline: bool = False) -> str:
     """A script defining ``window.CHESSBOT_CONFIG``, the page's settings.
 
     It lists the play levels, and says where player stats are kept:
@@ -68,6 +70,8 @@ def config_js(stats_url: str | None = None, stats_key: str | None = None) -> str
         "levels": [level.as_dict() for level in LEVELS],
         "defaultLevel": DEFAULT_LEVEL,
         "stats": {"url": stats_url.rstrip("/"), "key": stats_key} if stats_url and stats_key else None,
+        # Only the static site registers the service worker (see site.py).
+        "offline": offline,
     }
     return "window.CHESSBOT_CONFIG = " + json.dumps(config) + ";\n"
 
@@ -116,6 +120,13 @@ class ChessBotHandler(BaseHTTPRequestHandler):
         elif path in STATIC_FILES:
             name, content_type = STATIC_FILES[path]
             self.send_body(HTTPStatus.OK, read_static(name), content_type)
+        elif path.startswith("/icons/") and "/" not in path[7:] and path[path.rfind(".") :] in ICON_TYPES:
+            try:
+                body = read_static("icons/" + path[7:])
+            except FileNotFoundError:
+                self.send_json(HTTPStatus.NOT_FOUND, {"error": f"no such icon: {path}"})
+                return
+            self.send_body(HTTPStatus.OK, body, ICON_TYPES[path[path.rfind(".") :]])
         else:
             self.send_json(HTTPStatus.NOT_FOUND, {"error": f"no such page: {path}"})
 
