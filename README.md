@@ -123,6 +123,14 @@ Games where they took back a move don't count towards it.
 
 ### Shared stats
 
+Supabase pauses free projects after about a week without requests. The
+**Keep the database awake** workflow (`.github/workflows/keepalive.yml`)
+reads one row every three days so that never happens; if the project gets
+paused anyway, the run fails and GitHub emails you, and you can restore it
+from the Supabase dashboard. GitHub switches off schedules in repositories
+without commits for 60 days, so the workflow switches itself back on each
+time it runs.
+
 If your tables were created from an older `games.sql`, also run the upgrades:
 [`supabase/upgrade-1.sql`](supabase/upgrade-1.sql) (hints and replays; until
 then games still save, just without those details) and
