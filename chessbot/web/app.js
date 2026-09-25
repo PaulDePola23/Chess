@@ -2313,12 +2313,18 @@
     setTrainerFeedback("Your move again.", "right");
   }
 
+  // solvedNow: the player played the last move themselves (not "Show solution").
   function finishPuzzle(solvedNow) {
     trainer.done = true;
     if (solvedNow && !trainer.result) resolvePuzzle(true);
-    const clean = trainer.result === "solved";
-    setTrainerFeedback(clean ? "Solved!" : "That's the solution. On to the next one.", clean ? "right" : "");
-    if (clean) playSound("end");
+    if (solvedNow) {
+      // Finishing it after a miss or a hint is still a success; it just doesn't raise the rating.
+      const clean = trainer.result === "solved";
+      setTrainerFeedback(clean ? "Solved!" : "Solved! Only a clean first try raises your rating.", "right");
+      playSound("end");
+    } else {
+      setTrainerFeedback("That's the solution. On to the next one.", "");
+    }
     renderTrainer();
   }
 
