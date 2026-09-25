@@ -51,6 +51,7 @@ class SearchResult:
     nodes: int
     elapsed: float
     pv: list[chess.Move] = field(default_factory=list)
+    book: bool = False  # an opening book move rather than a search result
 
     @property
     def mate_in(self) -> int | None:
@@ -80,8 +81,10 @@ def _victim_value(board: chess.Board, move: chess.Move) -> int:
 class Searcher:
     """A chess engine. Keep one instance per game so the hash table carries over between moves."""
 
-    def __init__(self, hash_entries: int = 300_000):
+    def __init__(self, hash_entries: int = 300_000, evaluator: Callable[[chess.Board], int] = evaluate):
         self.hash_entries = hash_entries
+        # The static evaluation; replaceable so versions can be played against each other.
+        self.evaluate = evaluator
         self.tt: dict[int, tuple] = {}
         self.new_game()
 
@@ -289,7 +292,7 @@ class Searcher:
             if alpha >= beta:
                 return alpha
             if ply >= MAX_PLY:
-                return evaluate(board)
+                return self.evaluate(board)
 
         in_check = board.is_check()
         if in_check:
@@ -321,7 +324,7 @@ class Searcher:
             and depth >= 3
             and abs(beta) < MATE_THRESHOLD
             and board.occupied_co[board.turn] & ~(board.pawns | board.kings)
-            and evaluate(board) >= beta
+            and self.evaluate(board) >= beta
         ):
             reduction = 3 if depth >= 6 else 2
             self._push(chess.Move.null())
@@ -393,7 +396,7 @@ class Searcher:
         board = self.board
         self.pv_table[ply] = []
         if ply >= MAX_PLY:
-            return evaluate(board)
+            return self.evaluate(board)
 
         in_check = board.is_check()
         if in_check:
@@ -403,7 +406,7 @@ class Searcher:
             if not moves:
                 return best_score
         else:
-            best_score = evaluate(board)
+            best_score = self.evaluate(board)
             if best_score >= beta:
                 return best_score
             alpha = max(alpha, best_score)

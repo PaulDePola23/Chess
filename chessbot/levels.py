@@ -35,6 +35,7 @@ from dataclasses import dataclass
 
 import chess
 
+from .book import book_move
 from .search import Searcher, SearchResult
 
 
@@ -47,6 +48,7 @@ class Level:
     temperature: float = 0.0  # lower levels: centipawns of randomness
     blunder_rate: float = 0.0  # lower levels: chance of a random legal move
     nodes: int | None = None  # upper levels: search node budget
+    book: bool = False  # play well-known opening moves from the opening book
     description: str = ""  # how it plays, for players choosing a level
 
     def as_dict(self) -> dict:
@@ -82,11 +84,17 @@ LEVELS = [
         description="Spots simple threats and misses most tactics.",
     ),
     Level(
-        4, "Club", 1150, rank_depth=2, temperature=20, description="Rarely blunders. Beat it with tactics and a plan."
+        4,
+        "Club",
+        1150,
+        rank_depth=2,
+        temperature=20,
+        book=True,
+        description="Rarely blunders. Beat it with tactics and a plan.",
     ),
-    Level(5, "Skilled", 1400, nodes=1_500, description="Looks a few moves ahead and punishes loose pieces."),
-    Level(6, "Strong", 1650, nodes=12_000, description="Sees most tactics. You'll need a real advantage."),
-    Level(7, "Expert", 1900, nodes=40_000, description="The full engine. Hard to beat."),
+    Level(5, "Skilled", 1400, nodes=1_500, book=True, description="Looks a few moves ahead and punishes loose pieces."),
+    Level(6, "Strong", 1650, nodes=12_000, book=True, description="Sees most tactics. You'll need a real advantage."),
+    Level(7, "Expert", 1900, nodes=40_000, book=True, description="The full engine. Hard to beat."),
 ]
 DEFAULT_LEVEL = 3
 
@@ -106,10 +114,15 @@ def choose_move(
     on_iteration=None,
 ) -> SearchResult:
     """Pick a move for ``board`` at ``level``. The result's score is the chosen move's."""
+    rng = rng or random.Random()
+    if level.book:
+        found = book_move(board, rng)
+        if found:
+            move, score = found
+            return SearchResult(move, score, 0, 0, 0.0, [move], book=True)
     if level.nodes is not None:
         return searcher.search(board, nodes=level.nodes, on_iteration=on_iteration)
 
-    rng = rng or random.Random()
     start = time.monotonic()
     if level.blunder_rate and rng.random() < level.blunder_rate:
         move = rng.choice(list(board.legal_moves))

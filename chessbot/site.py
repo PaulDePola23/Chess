@@ -27,6 +27,8 @@ CHESSBOT_MODULES = [
     "evaluation.py",
     "search.py",
     "levels.py",
+    "book.py",
+    "book.json",
     "openings.py",
     "openings.json",
     "webapi.py",

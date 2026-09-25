@@ -213,10 +213,11 @@ from the opening.
 
 | File | What it does |
 | ---- | ------------ |
-| [`chessbot/evaluation.py`](chessbot/evaluation.py) | Scores a position: material plus piece-square tables, blended between middlegame and endgame by how much material is left. It also knows a bishop-pair bonus, which material counts are dead draws, and how to push a lone king to the edge to mate it. |
+| [`chessbot/evaluation.py`](chessbot/evaluation.py) | Scores a position: material plus piece-square tables, blended between middlegame and endgame by how much material is left, with pawn structure (doubled, isolated and passed pawns), rooks on open files and the pawn shield in front of the king. It also knows a bishop-pair bonus, which material counts are dead draws, and how to push a lone king to the edge to mate it. |
 | [`chessbot/search.py`](chessbot/search.py) | Chooses the move. Iterative-deepening alpha-beta (negamax with PVS), a transposition table, quiescence search, MVV-LVA / killer / history move ordering, null-move pruning, late-move reductions, check extensions, mate-distance scoring, and repetition and fifty-move draw detection. |
 | [`chessbot/uci.py`](chessbot/uci.py) | The UCI protocol. The search runs on its own thread so `stop` and `isready` get answered while it is thinking. |
 | [`chessbot/openings.py`](chessbot/openings.py) | Opening names, from the public-domain [Lichess chess-openings](https://github.com/lichess-org/chess-openings) data set (`scripts/build_openings.py` rebuilds `openings.json`). |
+| [`chessbot/book.py`](chessbot/book.py) | The opening book the Club level and up play from: the moves of the named Lichess opening lines, kept only where Stockfish rates them within a third of a pawn of its best move (`scripts/build_book.py` rebuilds `book.json`). Main lines come up more often than sidelines. |
 | [`chessbot/levels.py`](chessbot/levels.py) | The seven play levels, their measured ratings, and how the weaker ones choose their moves. |
 | [`chessbot/play.py`](chessbot/play.py) | The terminal game. |
 | [`chessbot/webapi.py`](chessbot/webapi.py), [`chessbot/server.py`](chessbot/server.py), [`chessbot/web/`](chessbot/web) | The browser game. The page keeps the game as a list of moves and asks a backend for legal moves, notation, the engine's reply and the post-game review, so all chess logic stays in Python. Lessons live in `chessbot/web/lessons.json`; `tests/test_lessons.py` checks every puzzle with the engine. |
@@ -245,10 +246,9 @@ CI runs the same checks on Python 3.10 to 3.13 for every push and pull request.
 `chessbot build-site _site` followed by `python -m http.server -d _site` lets you
 try the static site locally.
 
-Ideas for making it stronger: an opening book, static exchange evaluation
-(SEE) to prune bad captures, king safety and pawn-structure terms in the
-evaluation, aspiration windows, and tuning the evaluation weights with
-self-play.
+Ideas for making it stronger: static exchange evaluation (SEE) to prune bad
+captures, aspiration windows, mobility in the evaluation, and tuning the
+evaluation weights with self-play.
 
 ## License
 

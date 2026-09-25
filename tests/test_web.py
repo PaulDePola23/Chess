@@ -174,6 +174,7 @@ def test_build_site(tmp_path, capsys):
     sources = json.loads((site / "python.json").read_text())
     assert {"chessbot/search.py", "chessbot/levels.py", "chessbot/webapi.py", "chess/__init__.py"} <= set(sources)
     assert json.loads(sources["chessbot/openings.json"])  # opening names ship with the engine
+    assert json.loads(sources["chessbot/book.json"])  # so does the opening book
     assert "class Searcher" in sources["chessbot/search.py"]
 
 

@@ -7,7 +7,9 @@ search expects.
 
 The piece values and tables are based on Tomasz Michniewski's "Simplified
 Evaluation Function", with endgame tables for pawns (push passers) and the
-king (walk to the centre).
+king (walk to the centre). On top of that come the usual structural terms:
+doubled, isolated and passed pawns, rooks on open files, and the pawn shield
+in front of a castled king.
 """
 
 import chess
@@ -140,6 +142,103 @@ _MG = _square_values(_MG_TABLES)
 _EG = _square_values(_EG_TABLES)
 
 
+# Structural terms as (middlegame, endgame) centipawns.
+DOUBLED_PAWN = (-10, -20)
+ISOLATED_PAWN = (-12, -16)
+# Passed pawn bonus by how far it has advanced (0 = its own back rank).
+PASSED_PAWN = [(0, 0), (5, 10), (8, 15), (15, 30), (30, 55), (50, 90), (80, 140), (0, 0)]
+ROOK_OPEN_FILE = (25, 10)
+ROOK_SEMI_OPEN_FILE = (12, 8)
+# A castled king missing the pawn in front of it on a file (middlegame only),
+# and extra when that file has no friendly pawn at all.
+KING_SHIELD_MISSING = -14
+KING_OPEN_FILE = -18
+
+_FILES = [chess.BB_FILES[f] for f in range(8)]
+_ADJACENT_FILES = [(_FILES[f - 1] if f > 0 else 0) | (_FILES[f + 1] if f < 7 else 0) for f in range(8)]
+
+
+def _passed_masks(color: chess.Color) -> list[int]:
+    """For each square, the squares an enemy pawn would have to be on to stop a pawn there."""
+    masks = []
+    for square in chess.SQUARES:
+        file, rank = chess.square_file(square), chess.square_rank(square)
+        ahead = range(rank + 1, 8) if color == chess.WHITE else range(0, rank)
+        mask = 0
+        for r in ahead:
+            for f in (file - 1, file, file + 1):
+                if 0 <= f < 8:
+                    mask |= chess.BB_SQUARES[chess.square(f, r)]
+        masks.append(mask)
+    return masks
+
+
+_PASSED_MASKS = {chess.WHITE: _passed_masks(chess.WHITE), chess.BLACK: _passed_masks(chess.BLACK)}
+_pawn_cache: dict[tuple[int, int], tuple[int, int]] = {}
+
+
+def _pawn_structure(white_pawns: int, black_pawns: int) -> tuple[int, int]:
+    """(middlegame, endgame) pawn-structure score from White's side. Cached: it only depends on the pawns."""
+    key = (white_pawns, black_pawns)
+    cached = _pawn_cache.get(key)
+    if cached is not None:
+        return cached
+    mg = eg = 0
+    for color, own, enemy, sign in (
+        (chess.WHITE, white_pawns, black_pawns, 1),
+        (chess.BLACK, black_pawns, white_pawns, -1),
+    ):
+        for file in range(8):
+            count = chess.popcount(own & _FILES[file])
+            if count > 1:
+                mg += sign * DOUBLED_PAWN[0] * (count - 1)
+                eg += sign * DOUBLED_PAWN[1] * (count - 1)
+        for square in chess.scan_forward(own):
+            file = chess.square_file(square)
+            if not own & _ADJACENT_FILES[file]:
+                mg += sign * ISOLATED_PAWN[0]
+                eg += sign * ISOLATED_PAWN[1]
+            if not enemy & _PASSED_MASKS[color][square]:
+                rank = chess.square_rank(square)
+                advanced = rank if color == chess.WHITE else 7 - rank
+                mg += sign * PASSED_PAWN[advanced][0]
+                eg += sign * PASSED_PAWN[advanced][1]
+    if len(_pawn_cache) > 100_000:
+        _pawn_cache.clear()
+    _pawn_cache[key] = (mg, eg)
+    return mg, eg
+
+
+def _rooks_and_king(board: chess.Board, color: chess.Color) -> tuple[int, int]:
+    """(middlegame, endgame) bonuses for ``color``'s rooks on open files and king shelter."""
+    mg = eg = 0
+    own_pawns = board.pawns & board.occupied_co[color]
+    all_pawns = board.pawns
+    for square in chess.scan_forward(board.rooks & board.occupied_co[color]):
+        file_mask = _FILES[chess.square_file(square)]
+        if not all_pawns & file_mask:
+            mg += ROOK_OPEN_FILE[0]
+            eg += ROOK_OPEN_FILE[1]
+        elif not own_pawns & file_mask:
+            mg += ROOK_SEMI_OPEN_FILE[0]
+            eg += ROOK_SEMI_OPEN_FILE[1]
+    king = board.king(color)
+    if king is not None:
+        file, rank = chess.square_file(king), chess.square_rank(king)
+        home = rank if color == chess.WHITE else 7 - rank
+        # Only a king tucked away on a wing has a shield worth keeping.
+        if home <= 1 and file not in (3, 4):
+            step = 1 if color == chess.WHITE else -1
+            shield_ranks = chess.BB_RANKS[rank + step] | chess.BB_RANKS[rank + 2 * step]
+            for f in (file - 1, file, file + 1):
+                if 0 <= f < 8:
+                    if not own_pawns & _FILES[f] & shield_ranks:
+                        mg += KING_SHIELD_MISSING
+                    if not own_pawns & _FILES[f]:
+                        mg += KING_OPEN_FILE
+    return mg, eg
+
+
 def _is_material_draw(board: chess.Board) -> bool:
     """True when neither side can win: no pawns, rooks or queens, and at most one minor piece each."""
     if board.pawns or board.rooks or board.queens:
@@ -193,9 +292,17 @@ def evaluate(board: chess.Board) -> int:
             mg[color] += BISHOP_PAIR_BONUS
             eg[color] += BISHOP_PAIR_BONUS
 
+    for color in chess.COLORS:
+        extra_mg, extra_eg = _rooks_and_king(board, color)
+        mg[color] += extra_mg
+        eg[color] += extra_eg
+
     phase = min(phase, MAX_PHASE)
-    mg_score = mg[chess.WHITE] - mg[chess.BLACK]
-    eg_score = eg[chess.WHITE] - eg[chess.BLACK]
+    pawns_mg, pawns_eg = _pawn_structure(
+        board.pawns & board.occupied_co[chess.WHITE], board.pawns & board.occupied_co[chess.BLACK]
+    )
+    mg_score = mg[chess.WHITE] - mg[chess.BLACK] + pawns_mg
+    eg_score = eg[chess.WHITE] - eg[chess.BLACK] + pawns_eg
     # Keep the blend scaled by MAX_PHASE until the end so that rounding is
     # identical for both colours (evaluate(board) == evaluate(board.mirror())).
     score = mg_score * phase + eg_score * (MAX_PHASE - phase)

@@ -634,10 +634,10 @@
     $("status").textContent = statusText();
     const info = game.engineInfo;
     $("eval").textContent = formatScore(info);
-    $("depth").textContent = info ? String(info.depth) : "–";
+    $("depth").textContent = info ? (info.book ? "book" : String(info.depth)) : "–";
     $("nodes").textContent = info ? formatNodes(info.nodes) : "–";
     $("time").textContent = info ? `${info.time.toFixed(1)}s` : "–";
-    $("pv").textContent = info && info.pv ? info.pv : "";
+    $("pv").textContent = info && info.pv ? (info.book ? `${info.pv} (opening book)` : info.pv) : "";
     $("evalbar-fill").style.height = `${whiteShare(info)}%`;
     const opening = game.state && game.state.opening;
     $("opening-name").hidden = !opening;

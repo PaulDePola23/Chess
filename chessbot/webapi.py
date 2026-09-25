@@ -173,6 +173,7 @@ def engine_reply(
             "nodes": result.nodes,
             "time": round(result.elapsed, 3),
             "pv": board.variation_san(result.pv) if result.pv else "",
+            "book": result.book,
         }
 
     callback = (lambda result: on_progress(summary(result))) if on_progress else None
