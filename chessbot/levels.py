@@ -106,7 +106,7 @@ LEVELS = [
         2000,
         nodes=80_000,
         book=True,
-        description="Named after Summer the Dog.",
+        description="Named after Summer the dog.",
     ),
     Level(
         9,
