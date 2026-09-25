@@ -86,18 +86,20 @@ Games where they took back a move don't count towards it.
 
 ### Shared stats
 
-Out of the box, stats are kept in each visitor's browser. To share them
-between everyone who visits the site, connect a free
-[Supabase](https://supabase.com) project:
+The public site keeps everyone's games in a Supabase project, configured in
+`.github/workflows/pages.yml`. Without one (for example in a fork, or with
+`chessbot serve`), stats are kept in each visitor's browser. To use your own
+free [Supabase](https://supabase.com) project:
 
 1. Create a project, open **SQL Editor**, and run [`supabase/games.sql`](supabase/games.sql).
    It creates a `games` table that anyone can read and add to, but not change.
 2. From the project's **API** settings, copy the **Project URL** and the public
    **anon** (or **publishable**) key. Both are meant to be public; never use the
    secret or `service_role` key.
-3. In this repo, open **Settings → Secrets and variables → Actions → Variables** and
-   add `CHESSBOT_STATS_URL` and `CHESSBOT_STATS_KEY` with those values, then re-run
-   the **Website** workflow.
+3. Put them in `.github/workflows/pages.yml`, or add repository variables named
+   `CHESSBOT_STATS_URL` and `CHESSBOT_STATS_KEY` under **Settings → Secrets and
+   variables → Actions → Variables** (these take precedence), then re-run the
+   **Website** workflow.
 
 For `chessbot serve` or `chessbot build-site`, set the same two environment
 variables (or pass `--stats-url` and `--stats-key` to `build-site`). Names

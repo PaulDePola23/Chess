@@ -31,10 +31,12 @@ jobs:
           python-version: "3.12"
       - name: Build
         env:
-          # Optional: a Supabase project for shared player stats (see README).
-          # Set these as repository variables under Settings -> Secrets and variables -> Actions.
-          CHESSBOT_STATS_URL: ${{ vars.CHESSBOT_STATS_URL }}
-          CHESSBOT_STATS_KEY: ${{ vars.CHESSBOT_STATS_KEY }}
+          # The Supabase project that holds shared player stats (see README).
+          # The publishable key is meant to be public: the table's row-level
+          # security only lets it read games and add new ones. Repository
+          # variables with the same names override these.
+          CHESSBOT_STATS_URL: ${{ vars.CHESSBOT_STATS_URL || 'https://vpqsrrhoqhoyjmndnltc.supabase.co' }}
+          CHESSBOT_STATS_KEY: ${{ vars.CHESSBOT_STATS_KEY || 'sb_publishable_ORnp8JSnyWblH5jt_0-uqw_h7Hx-mhx' }}
         run: |
           pip install .
           chessbot build-site _site
