@@ -130,18 +130,6 @@ button, input, textarea { font: inherit; color: inherit; }
 .theme-toggle .icon-sun { display: none; }
 .theme-toggle.is-dark .icon-sun { display: block; }
 .theme-toggle.is-dark .icon-moon { display: none; }
-@media (max-width: 640px) {
-  .masthead { column-gap: 12px; }
-  .masthead .tabs { order: 3; width: 100%; margin-left: 0; }
-  .tabs a { flex: 1; min-width: 0; text-align: center; padding-inline: 2px; font-size: 14px; }
-  .theme-toggle { margin-left: auto; }
-  .wordmark { white-space: nowrap; }
-}
-@media (max-width: 480px) {
-  /* Icon only, so the name and the switch share a row (the button keeps its aria-label). */
-  .theme-toggle { padding: 8px 10px; }
-  .theme-toggle span { display: none; }
-}
 .tabs { display: flex; gap: 4px; padding: 4px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
 .tabs a {
   padding: 6px 14px;
@@ -153,6 +141,22 @@ button, input, textarea { font: inherit; color: inherit; }
 .tabs a:hover { color: var(--ink); }
 .tabs a[aria-current="page"] { background: var(--ink); color: var(--surface); }
 .tabs a:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: 2px; }
+@media (max-width: 640px) {
+  .masthead { column-gap: 12px; }
+  .masthead .tabs { order: 3; width: 100%; margin-left: 0; }
+  .tabs { gap: 2px; }
+  .tabs a { flex: 1 1 auto; min-width: 0; text-align: center; padding-inline: 4px; font-size: 14px; }
+  .theme-toggle { margin-left: auto; }
+  .wordmark { white-space: nowrap; }
+}
+@media (max-width: 480px) {
+  /* Icon only, so the name and the switch share a row (the button keeps its aria-label). */
+  .theme-toggle { padding: 8px 10px; }
+  .theme-toggle span { display: none; }
+}
+@media (max-width: 380px) {
+  .tabs a { padding-inline: 2px; font-size: 13px; }
+}
 .wordmark {
   margin: 0;
   font-family: var(--sans);
@@ -504,7 +508,7 @@ button, input, textarea { font: inherit; color: inherit; }
 .game-note { margin: -6px 0 0; font-size: 13px; color: var(--muted); }
 .buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 #new-game { width: 100%; padding-block: 10px; }
-#resign.confirming { border-color: var(--blunder); color: var(--blunder); }
+#resign.confirming, #friend-resign.confirming { border-color: var(--blunder); color: var(--blunder); }
 button {
   padding: 8px 12px;
   border: 1px solid var(--line);
@@ -870,9 +874,14 @@ button.primary:hover:not(:disabled) { border-color: var(--ink); }
   .ladder .name { margin-top: 0; }
 }
 
-.features { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
-@media (max-width: 1000px) {
+/* Three cards over two. */
+.features { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 16px; }
+.feature { grid-column: span 2; }
+.feature:nth-child(n + 4) { grid-column: span 3; }
+@media (max-width: 760px) {
   .features { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .feature, .feature:nth-child(n + 4) { grid-column: auto; }
+  .feature:last-child { grid-column: 1 / -1; }
 }
 @media (max-width: 560px) {
   .features { grid-template-columns: minmax(0, 1fr); }
@@ -1054,3 +1063,44 @@ button.primary:hover:not(:disabled) { border-color: var(--ink); }
   background: var(--surface-2);
   font-size: 14px;
 }
+
+/* Friend */
+.friend .player { padding-left: 0; }
+.friend-lobby, .friend-invite, .friend-game { display: flex; flex-direction: column; gap: 14px; }
+.friend-lobby h2, .friend-invite h2 { margin: 0; font-size: 20px; line-height: 1.25; }
+.friend-lobby > p:not(.game-note), .friend-invite p { margin: 0; color: var(--muted); font-size: 15px; }
+.friend-lobby .game-note { margin: 0; }
+.friend-lobby > button, .friend-invite > button { width: 100%; padding-block: 10px; }
+.friend-share, .friend-draw { display: flex; flex-direction: column; gap: 6px; }
+.friend-draw { flex-direction: row; }
+.friend-draw button { flex: 1; }
+.friend-share label, .friend-recent h3 {
+  font: 600 11px/1.2 var(--sans);
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--muted);
+}
+.friend-share input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+  font: 13px var(--mono);
+}
+.friend-recent h3 { margin: 4px 0 8px; }
+.friend-recent ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.friend-recent a {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--ink);
+  text-decoration: none;
+  font-size: 14px;
+}
+.friend-recent a:hover { border-color: var(--muted); }
+.friend-recent a span:last-child { color: var(--muted); white-space: nowrap; }

@@ -37,7 +37,7 @@ symbols well.
 chessbot serve --open    # or open http://localhost:8000 yourself
 ```
 
-The page has five tabs, plus a light/dark switch (it follows your device's
+The page has six tabs, plus a light/dark switch (it follows your device's
 setting until you choose):
 
 - **Home**: a title page with a replay of Morphy's Opera Game, how to play,
@@ -54,6 +54,10 @@ setting until you choose):
 - **Puzzles**: tactics taken from real games, picked to match your puzzle
   rating, which goes up when you solve one on the first try and down when you
   miss, use a hint or look at the solution.
+- **Friend**: play another person. Create a game link and send it to a
+  friend; they open it, add their name and you're playing live, with draw
+  offers and resigning. Anyone else with the link can watch. Or play on one
+  device, taking turns.
 - **Learn**: eleven short lessons for newer players (piece values, opening
   principles, checks-captures-threats, forks, pins, skewers, discovered
   attacks and basic mates), each with a puzzle to solve on the board.
@@ -112,7 +116,19 @@ If your tables were created from an older `games.sql`, also run the upgrades:
 [`supabase/upgrade-1.sql`](supabase/upgrade-1.sql) (hints and replays; until
 then games still save, just without those details) and
 [`supabase/upgrade-2.sql`](supabase/upgrade-2.sql) (puzzle ratings; until then
-they stay in each browser).
+they stay in each browser) and [`supabase/upgrade-3.sql`](supabase/upgrade-3.sql)
+(online games on the Friend tab).
+
+### Playing a friend online
+
+A game between two people lives in the `live_games` table, and both
+browsers check it every second and a half. Anyone can read a game, but only
+its two players can change it: each seat gets a random token that stays in
+that player's browser, and every change (joining, moving, offering a draw,
+resigning) goes through a database function that checks the token, whose
+turn it is and that exactly one move was added. The tokens are in a table
+the public key can't read. Both browsers check with python-chess that the
+moves are legal. Games against friends don't count on the Stats page.
 
 ### Installing and offline play
 

@@ -156,9 +156,48 @@
       storageSet(PENDING, left);
     }
 
+    // Live games against a friend need supabase/upgrade-3.sql; PostgREST
+    // answers 404 for its tables and functions until that has been run.
+    const NOT_SET_UP = "Online games aren't switched on for this site yet (supabase/upgrade-3.sql).";
+
+    async function liveGames(ids) {
+      if (!ids.length) return [];
+      const response = await fetch(`${url}/rest/v1/live_games?id=in.(${ids.join(",")})&select=*`, {
+        headers,
+        cache: "no-store",
+      });
+      if (response.status === 404) throw new Error(NOT_SET_UP);
+      if (!response.ok) throw new Error(`Couldn't load the game (${response.status}).`);
+      return response.json();
+    }
+
     return {
       shared: true,
       flush: flushPending,
+      liveGames,
+      async liveGame(id) {
+        return (await liveGames([id]))[0] || null;
+      },
+      // Every change to a live game goes through a database function that checks the seat's token.
+      async rpc(name, args) {
+        const response = await fetch(`${url}/rest/v1/rpc/${name}`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify(args),
+        });
+        const text = await response.text();
+        if (response.status === 404) throw new Error(NOT_SET_UP);
+        if (!response.ok) {
+          let message = `The server turned that down (${response.status}).`;
+          try {
+            message = JSON.parse(text).message || message;
+          } catch {
+            // Not JSON; keep the generic message.
+          }
+          throw new Error(message);
+        }
+        return text ? JSON.parse(text) : null;
+      },
       // Puzzle attempts need the puzzle_attempts table (supabase/upgrade-2.sql);
       // without it they stay in this browser only.
       async listPuzzleAttempts() {
@@ -609,11 +648,8 @@
     $("evalbar").classList.toggle("white-top", !whiteAtBottom());
   }
 
-  function renderSheet() {
-    const san = game.state ? game.state.san : [];
-    const verdicts = {};
-    if (game.review) for (const item of game.review.items) if (item.verdict) verdicts[item.ply] = item.verdict;
-    const body = $("moves");
+  // Fill a move table body with numbered rows of SAN moves, marking review verdicts by ply.
+  function fillMoveSheet(body, san, verdicts = {}) {
     body.textContent = "";
     for (let i = 0; i < san.length; i += 2) {
       const tr = el("tr", {}, el("td", { text: `${i / 2 + 1}.` }));
@@ -625,6 +661,13 @@
       }
       body.append(tr);
     }
+  }
+
+  function renderSheet() {
+    const san = game.state ? game.state.san : [];
+    const verdicts = {};
+    if (game.review) for (const item of game.review.items) if (item.verdict) verdicts[item.ply] = item.verdict;
+    fillMoveSheet($("moves"), san, verdicts);
     $("sheet-empty").hidden = san.length > 0;
     $("sheet").scrollTop = $("sheet").scrollHeight;
   }
@@ -2187,6 +2230,571 @@
     nextPuzzle();
   });
 
+  // ------------------------------------------------------------ friend
+
+  // Games between two people: online through the live_games table (see
+  // supabase/upgrade-3.sql), which both players poll every couple of seconds,
+  // or taking turns on this device. Routes: #friend (the lobby),
+  // #friend/local and #friend/<game id>. These games don't count on the Stats page.
+  const FRIEND_KEY = "chessbot.friend.v1";
+  const GAME_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+  const POLL_MS = 1500;
+  const POLL_HIDDEN_MS = 5000;
+  const onlineGames = Boolean(stats.rpc);
+  const BASE_TITLE = document.title;
+
+  const friendSaved = storageGet(FRIEND_KEY, {}) || {};
+  const friend = {
+    // Seats this browser holds in online games: id -> {token, color, at}.
+    seats: Object.fromEntries(
+      Object.entries(friendSaved.seats || {}).filter(([id, seat]) => GAME_ID.test(id) && seat && seat.token),
+    ),
+    // The game on this device: {moves, result, reason}.
+    local: friendSaved.local && Array.isArray(friendSaved.local.moves) ? friendSaved.local : null,
+    route: null,
+    mode: null, // "online", "local", or null for the lobby
+    id: null,
+    row: null, // the online game's live_games row
+    moves: [],
+    state: null,
+    flipped: false,
+    busy: false,
+    confirmResign: false,
+    error: null,
+    token: 0, // bumped when another game opens, so late replies are ignored
+    version: 0, // bumped by this player's own changes, so older polls don't undo them
+    timer: null,
+  };
+
+  function saveFriend() {
+    const recent = Object.entries(friend.seats)
+      .sort((a, b) => b[1].at - a[1].at)
+      .slice(0, 20);
+    friend.seats = Object.fromEntries(recent);
+    storageSet(FRIEND_KEY, { seats: friend.seats, local: friend.local });
+  }
+
+  const friendBoard = createBoard($("friend-wrap"));
+  const friendSeat = () => (friend.mode === "online" && friend.seats[friend.id]) || null;
+  const friendColor = () => (friendSeat() ? friendSeat().color : null);
+  const friendLink = (id) => `${location.origin}${location.pathname}#friend/${id}`;
+  const capitalized = (word) => word[0].toUpperCase() + word.slice(1);
+  const plies = (moves) => (moves ? moves.split(" ").length : 0);
+
+  // {over, result, reason, winner}: the rules' verdict, or a resignation or agreed draw.
+  function friendOutcome() {
+    const ended =
+      friend.mode === "online"
+        ? friend.row && friend.row.status === "over" && friend.row
+        : friend.mode === "local" && friend.local && friend.local.result && friend.local;
+    const s = friend.state;
+    const result = ended ? ended.result : s && s.over ? s.result : null;
+    if (!result) return { over: false };
+    const reason = ended ? ended.reason : s.reason;
+    return { over: true, result, reason, winner: result === "1-0" ? "white" : result === "0-1" ? "black" : null };
+  }
+
+  // The color that may move on this screen now, if any.
+  function friendMover() {
+    const s = friend.state;
+    if (!s || friend.busy || friendOutcome().over) return null;
+    if (friend.mode === "local") return s.turn;
+    const playing = friend.mode === "online" && friend.row && friend.row.status === "playing";
+    return playing && friendColor() === s.turn ? s.turn : null;
+  }
+
+  function friendName(color) {
+    if (friend.mode === "local") return capitalized(color);
+    const name = friend.row && friend.row[`${color}_name`];
+    return name || "Waiting for a player…";
+  }
+
+  function friendBottom() {
+    const base = friendColor() || "white";
+    return friend.flipped ? other(base) : base;
+  }
+
+  function friendStatusText() {
+    const s = friend.state;
+    const row = friend.row;
+    const you = friendColor();
+    const o = friendOutcome();
+    if (friend.mode === "online" && !row) return friend.error ? "" : "Loading the game…";
+    if (!s) return "Setting up the board…";
+    if (o.over) {
+      const winner = o.winner;
+      if (!winner) return o.reason === "agreement" ? "Draw agreed." : `Draw by ${o.reason}.`;
+      const loser = other(winner);
+      if (o.reason === "resignation") {
+        if (you === loser) return "You resigned.";
+        return you === winner ? `${friendName(loser)} resigned. You win.` : `${friendName(loser)} resigned.`;
+      }
+      const how = o.reason === "checkmate" ? "Checkmate." : `${capitalized(o.reason)}.`;
+      if (you) return you === winner ? `${how} You win.` : `${how} ${friendName(winner)} wins.`;
+      return `${how} ${friendName(winner)} wins.`;
+    }
+    const check = s.check ? " Check!" : "";
+    if (friend.mode === "local") return `${capitalized(s.turn)} to move.${check}`;
+    if (row.status === "waiting") return you ? "Waiting for your friend to join." : "Waiting for a second player.";
+    if (!you) return `Watching. ${friendName(s.turn)} (${s.turn}) to move.${check}`;
+    const offer = row.draw_offer;
+    if (offer && offer !== you) return `${friendName(offer)} offers a draw.`;
+    if (s.turn === you) return s.check ? "Your move. You're in check." : "Your move.";
+    return offer === you ? `You offered a draw. ${friendName(s.turn)} to move.` : `${friendName(s.turn)} to move…`;
+  }
+
+  function renderFriend() {
+    const lobby = friend.mode === null;
+    const invite = friend.mode === "online" && !friendSeat() && friend.row && friend.row.status === "waiting";
+    $("friend-lobby").hidden = !lobby;
+    $("friend-invite").hidden = !invite;
+    $("friend-game").hidden = lobby || invite;
+    $("friend-error").hidden = !friend.error;
+    $("friend-error").textContent = friend.error || "";
+    renderFriendBoard();
+    renderFriendPlayers();
+    if (lobby) renderFriendLobby();
+    else if (invite) renderFriendInvite();
+    else renderFriendGame();
+    const yourTurn = friend.mode === "online" && friendMover() !== null;
+    document.title = yourTurn ? `Your move · ${BASE_TITLE}` : BASE_TITLE;
+    // The tab returns to the game that is open.
+    document.querySelector('[data-tab="friend"]').setAttribute("href", friend.route ? `#friend/${friend.route}` : "#friend");
+  }
+
+  function renderFriendBoard() {
+    const s = friend.state;
+    const mover = friendMover();
+    friendBoard.render({
+      fen: s ? s.fen : START_FEN,
+      orientation: friendBottom(),
+      last: s && s.last,
+      check: s && s.check,
+      player: mover,
+      legal: mover ? s.legal : [],
+      onMove: friendMove,
+    });
+  }
+
+  function renderFriendPlayers() {
+    const bottom = friendBottom();
+    const waiting = friend.row && friend.row.status === "waiting";
+    const turn = friend.state && !friendOutcome().over && !waiting ? friend.state.turn : null;
+    for (const [id, color] of [
+      ["friend-top", other(bottom)],
+      ["friend-bottom", bottom],
+    ]) {
+      const node = $(id);
+      const shown = friend.mode !== null;
+      node.querySelector(".player-name").textContent = shown ? friendName(color) : "";
+      node.querySelector(".player-side").textContent = shown ? color + (friendColor() === color ? " · you" : "") : "";
+      node.classList.toggle("to-move", turn === color);
+    }
+  }
+
+  function renderFriendLobby() {
+    const name = $("friend-name");
+    if (document.activeElement !== name) name.value = playerName;
+    $("friend-create").disabled = friend.busy || !onlineGames;
+    $("friend-local").disabled = friend.busy;
+    $("friend-lobby-note").textContent = onlineGames
+      ? "Your friend opens the link, adds their name and you're playing. Moves show up for both of you within a couple of seconds."
+      : "Online games need the site's shared database, which this copy doesn't have. You can still play on this device.";
+  }
+
+  function renderFriendInvite() {
+    const row = friend.row;
+    const host = row.white_name ? "white" : "black";
+    $("friend-invite-title").textContent = `${row[`${host}_name`]} invited you to a game`;
+    $("friend-invite-text").textContent = `You'll play ${other(host)}. Add your name so they know who's joined.`;
+    const name = $("friend-join-name");
+    if (document.activeElement !== name) name.value = playerName;
+    $("friend-join").disabled = friend.busy;
+  }
+
+  function renderFriendGame() {
+    const row = friend.row;
+    const you = friendColor();
+    const o = friendOutcome();
+    $("friend-status").textContent = friendStatusText();
+    const waiting = friend.mode === "online" && row && row.status === "waiting";
+    $("friend-share").hidden = !(waiting && you);
+    if (waiting && you) $("friend-link").value = friendLink(friend.id);
+    $("friend-send").hidden = !navigator.share;
+    const offer = row && row.status === "playing" ? row.draw_offer : null;
+    $("friend-draw-offer").hidden = !(you && offer && offer !== you);
+    $("friend-accept").disabled = $("friend-decline").disabled = friend.busy;
+
+    const san = friend.state ? friend.state.san : [];
+    fillMoveSheet($("friend-moves"), san);
+    $("friend-sheet-empty").hidden = san.length > 0;
+    $("friend-sheet").scrollTop = $("friend-sheet").scrollHeight;
+
+    const playing = Boolean(friend.state) && !o.over && (friend.mode === "local" || (you && row && row.status === "playing"));
+    const offerButton = $("friend-offer");
+    if (friend.mode === "local") offerButton.textContent = "Agree a draw";
+    else offerButton.textContent = offer && offer === you ? "Draw offered" : "Offer draw";
+    offerButton.disabled = !playing || friend.busy || Boolean(offer) || friend.moves.length < 2;
+    const resign = $("friend-resign");
+    resign.disabled = !playing || friend.busy;
+    if (!playing) friend.confirmResign = false;
+    const resigner = friend.mode === "local" && friend.state ? `${capitalized(friend.state.turn)} resigns` : "Resign";
+    resign.textContent = friend.confirmResign ? "Confirm resign" : resigner;
+    resign.classList.toggle("confirming", friend.confirmResign);
+    $("friend-leave").textContent = o.over || !playing ? "New game" : "Leave";
+  }
+
+  function friendError(error) {
+    const text = (error && error.message) || String(error);
+    if (/failed to fetch|networkerror|load failed/i.test(text)) return "Couldn't reach the server. Check your connection.";
+    return text;
+  }
+
+  // Loads a live_games row into the page, checking its moves with the rules backend.
+  async function applyRow(row) {
+    if (!row) {
+      friend.row = null;
+      friend.error = "There's no game at this link. Check that it was copied in full.";
+      return;
+    }
+    const moves = row.moves ? row.moves.split(" ") : [];
+    const wasOver = friend.row && friend.row.status === "over";
+    friend.row = row;
+    if (!friend.state || moves.join(" ") !== friend.moves.join(" ")) {
+      let state;
+      try {
+        state = await backend.state(moves);
+      } catch {
+        friend.error = "This game's moves aren't legal chess, so it can't be shown.";
+        return;
+      }
+      const advanced = friend.state && moves.length > friend.moves.length;
+      friend.moves = moves;
+      friend.state = state;
+      if (advanced) soundForLastMove(state);
+    } else if (!wasOver && row.status === "over" && friend.state) {
+      playSound("end");
+    }
+    friend.error = null;
+  }
+
+  function schedulePoll() {
+    clearTimeout(friend.timer);
+    if (friend.mode !== "online" || (friend.row && friend.row.status === "over")) return;
+    friend.timer = setTimeout(pollFriend, document.hidden ? POLL_HIDDEN_MS : POLL_MS);
+  }
+
+  async function pollFriend() {
+    clearTimeout(friend.timer);
+    const { token, version } = friend;
+    try {
+      const row = await stats.liveGame(friend.id);
+      // Skip a poll that started before this player's own move or action landed.
+      if (token !== friend.token || version !== friend.version || friend.busy) return;
+      await applyRow(row);
+    } catch (error) {
+      if (token === friend.token) friend.error = friendError(error);
+    } finally {
+      if (token === friend.token) {
+        renderFriend();
+        schedulePoll();
+      }
+    }
+  }
+
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden && friend.mode === "online") pollFriend();
+  });
+
+  async function openFriend(route) {
+    if (friend.route === route && (friend.mode !== null || route === null)) {
+      renderFriend();
+      if (friend.mode === "online") pollFriend();
+      return;
+    }
+    friend.token++;
+    clearTimeout(friend.timer);
+    Object.assign(friend, { route, row: null, moves: [], state: null, flipped: false, busy: false, error: null });
+    friend.confirmResign = false;
+    friend.id = route && GAME_ID.test(route) ? route : null;
+    friend.mode = route === "local" && friend.local ? "local" : friend.id ? "online" : null;
+    if (friend.mode === null) friend.route = null;
+    renderFriend();
+    if (friend.mode === null) {
+      loadFriendRecent();
+      return;
+    }
+    const token = friend.token;
+    try {
+      await backend.ready;
+      if (friend.mode === "local") {
+        const state = await backend.state(friend.local.moves);
+        if (token !== friend.token) return;
+        friend.moves = [...friend.local.moves];
+        friend.state = state;
+      } else if (!onlineGames) {
+        throw new Error("Online games need the site's shared database, which this copy doesn't have.");
+      } else {
+        const row = await stats.liveGame(friend.id);
+        if (token !== friend.token) return;
+        await applyRow(row);
+      }
+    } catch (error) {
+      if (token === friend.token) friend.error = friendError(error);
+    }
+    if (token !== friend.token) return;
+    renderFriend();
+    schedulePoll();
+  }
+
+  async function friendMove(uci) {
+    if (friend.busy || !friendMover()) return;
+    const token = friend.token;
+    const moves = [...friend.moves, uci];
+    friend.busy = true;
+    friend.version++;
+    try {
+      const state = await backend.state(moves);
+      if (token !== friend.token) return;
+      friend.moves = moves;
+      friend.state = state;
+      friend.error = null;
+      soundForLastMove(state);
+      if (friend.mode === "local") {
+        friend.local = { moves, result: null, reason: null };
+        saveFriend();
+        return;
+      }
+      renderFriend();
+      const ending = state.over ? { p_result: state.result, p_reason: state.reason } : {};
+      await stats.rpc("play_live_move", {
+        p_id: friend.id,
+        p_token: friendSeat().token,
+        p_moves: moves.join(" "),
+        ...ending,
+      });
+      if (token !== friend.token) return;
+      friend.row = { ...friend.row, moves: moves.join(" "), draw_offer: null };
+      if (state.over) Object.assign(friend.row, { status: "over", result: state.result, reason: state.reason });
+    } catch (error) {
+      if (token !== friend.token) return;
+      friend.error = friendError(error);
+      friend.state = null; // the next poll puts back the server's version of the game
+    } finally {
+      if (token === friend.token) {
+        friend.busy = false;
+        friend.version++;
+        renderFriend();
+        if (friend.mode === "online" && !friend.state) pollFriend();
+      }
+    }
+  }
+
+  // A resignation, draw offer or reply: one database call, then a fresh look at the game.
+  async function friendAction(name, args = {}) {
+    if (friend.busy) return;
+    const token = friend.token;
+    friend.busy = true;
+    friend.version++;
+    renderFriend();
+    try {
+      await stats.rpc(name, { p_id: friend.id, p_token: friendSeat().token, ...args });
+      if (token === friend.token) friend.error = null;
+    } catch (error) {
+      if (token === friend.token) friend.error = friendError(error);
+    } finally {
+      if (token === friend.token) {
+        friend.busy = false;
+        friend.version++;
+        pollFriend();
+      }
+    }
+  }
+
+  function friendNameFrom(input) {
+    const name = input.value.trim().slice(0, 24);
+    if (!name) {
+      friend.error = "Add your name first, so your friend knows who they're playing.";
+      renderFriend();
+      input.focus();
+      return null;
+    }
+    playerName = name;
+    storageSet(NAME_KEY, name);
+    $("player-name").value = name;
+    friend.error = null;
+    return name;
+  }
+
+  const randomToken = () =>
+    Array.from(crypto.getRandomValues(new Uint8Array(24)), (byte) => byte.toString(16).padStart(2, "0")).join("");
+
+  $("friend-create").addEventListener("click", async () => {
+    const name = friendNameFrom($("friend-name"));
+    if (!name || friend.busy) return;
+    const chosen = document.querySelector('input[name="friend-color"]:checked').value;
+    const color = chosen === "random" ? (Math.random() < 0.5 ? "white" : "black") : chosen;
+    const id = uuid();
+    const token = randomToken();
+    friend.busy = true;
+    renderFriend();
+    try {
+      await stats.rpc("create_live_game", { p_id: id, p_token: token, p_name: name, p_color: color });
+      friend.seats[id] = { token, color, at: Date.now() };
+      saveFriend();
+      location.hash = `#friend/${id}`;
+    } catch (error) {
+      friend.error = friendError(error);
+    } finally {
+      friend.busy = false;
+      renderFriend();
+    }
+  });
+
+  $("friend-local").addEventListener("click", () => {
+    friend.local = { moves: [], result: null, reason: null };
+    saveFriend();
+    friend.route = null; // open it afresh even if the old one was showing
+    if (location.hash === "#friend/local") openFriend("local");
+    else location.hash = "#friend/local";
+  });
+
+  $("friend-join").addEventListener("click", async () => {
+    const name = friendNameFrom($("friend-join-name"));
+    if (!name || friend.busy) return;
+    const token = randomToken();
+    const id = friend.id;
+    friend.busy = true;
+    renderFriend();
+    try {
+      const color = await stats.rpc("join_live_game", { p_id: id, p_token: token, p_name: name });
+      friend.seats[id] = { token, color, at: Date.now() };
+      saveFriend();
+    } catch (error) {
+      friend.error = friendError(error);
+    } finally {
+      friend.busy = false;
+      friend.version++;
+      pollFriend();
+    }
+  });
+
+  $("friend-name").addEventListener("input", (event) => {
+    playerName = event.target.value.slice(0, 24);
+    storageSet(NAME_KEY, playerName);
+    $("player-name").value = playerName;
+  });
+
+  $("friend-copy").addEventListener("click", async () => {
+    const button = $("friend-copy");
+    try {
+      await navigator.clipboard.writeText($("friend-link").value);
+      button.textContent = "Copied";
+    } catch {
+      $("friend-link").select();
+      button.textContent = "Press Ctrl+C";
+    }
+    setTimeout(() => (button.textContent = "Copy"), 2000);
+  });
+
+  $("friend-send").addEventListener("click", () => {
+    const host = friendName(friendColor());
+    navigator
+      .share({ title: "Paul's Chess", text: `${host} invites you to a game of chess.`, url: $("friend-link").value })
+      .catch(() => {});
+  });
+
+  $("friend-link").addEventListener("focus", (event) => event.target.select());
+
+  let friendResignTimer = null;
+  $("friend-resign").addEventListener("click", () => {
+    if (!friend.confirmResign) {
+      friend.confirmResign = true;
+      friendResignTimer = setTimeout(() => {
+        friend.confirmResign = false;
+        renderFriend();
+      }, 3000);
+      renderFriend();
+      return;
+    }
+    clearTimeout(friendResignTimer);
+    friend.confirmResign = false;
+    if (friend.mode === "local") {
+      const loser = friend.state.turn;
+      friend.local = { ...friend.local, result: loser === "white" ? "0-1" : "1-0", reason: "resignation" };
+      saveFriend();
+      playSound("end");
+      renderFriend();
+    } else {
+      friendAction("resign_live_game");
+    }
+  });
+
+  $("friend-offer").addEventListener("click", () => {
+    if (friend.mode === "local") {
+      friend.local = { ...friend.local, result: "1/2-1/2", reason: "agreement" };
+      saveFriend();
+      playSound("end");
+      renderFriend();
+    } else {
+      friendAction("live_game_draw", { p_action: "offer" });
+    }
+  });
+  $("friend-accept").addEventListener("click", () => friendAction("live_game_draw", { p_action: "accept" }));
+  $("friend-decline").addEventListener("click", () => friendAction("live_game_draw", { p_action: "decline" }));
+
+  $("friend-flip").addEventListener("click", () => {
+    friend.flipped = !friend.flipped;
+    renderFriend();
+  });
+
+  $("friend-leave").addEventListener("click", () => {
+    location.hash = "#friend";
+  });
+
+  // The lobby lists the unfinished game on this device and this browser's recent online games.
+  async function loadFriendRecent() {
+    const token = friend.token;
+    const items = [];
+    const local = friend.local;
+    if (local && local.moves.length && !local.result) {
+      const turn = local.moves.length % 2 === 0 ? "White" : "Black";
+      items.push({ href: "#friend/local", label: "On this device", detail: `${turn} to move` });
+    }
+    const ids = Object.entries(friend.seats)
+      .sort((a, b) => b[1].at - a[1].at)
+      .slice(0, 5)
+      .map(([id]) => id);
+    let rows = [];
+    if (onlineGames && ids.length) {
+      try {
+        rows = await stats.liveGames(ids);
+      } catch {
+        rows = [];
+      }
+    }
+    if (token !== friend.token) return;
+    rows.sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1));
+    for (const row of rows) {
+      const you = friend.seats[row.id].color;
+      const opponent = row[`${other(you)}_name`];
+      let detail;
+      if (row.status === "waiting") detail = "Waiting for a player";
+      else if (row.status === "playing") {
+        const turn = plies(row.moves) % 2 === 0 ? "white" : "black";
+        detail = turn === you ? "Your move" : "Their move";
+      } else if (row.result === "1/2-1/2") detail = "Draw";
+      else detail = (row.result === "1-0") === (you === "white") ? "You won" : "You lost";
+      items.push({ href: `#friend/${row.id}`, label: opponent ? `vs ${opponent}` : "Waiting for a player", detail });
+    }
+    const list = $("friend-recent-list");
+    list.textContent = "";
+    for (const item of items) {
+      list.append(el("li", {}, el("a", { href: item.href }, el("span", { text: item.label }), el("span", { text: item.detail }))));
+    }
+    $("friend-recent").hidden = items.length === 0;
+  }
+
   // ------------------------------------------------------------ home
 
   const showcaseBoard = createBoard($("showcase-wrap"));
@@ -2293,10 +2901,11 @@
 
   // ------------------------------------------------------------ tabs
 
-  const VIEWS = ["home", "play", "puzzles", "learn", "stats"];
+  const VIEWS = ["home", "play", "puzzles", "friend", "learn", "stats"];
 
   function showView() {
-    const hash = location.hash.slice(1);
+    // #friend/<route> opens a game on the Friend tab.
+    const [hash, route] = location.hash.slice(1).split(/\/(.*)/s);
     const name = VIEWS.includes(hash) ? hash : "home";
     for (const view of document.querySelectorAll("[data-view]")) view.hidden = view.dataset.view !== name;
     for (const tab of document.querySelectorAll("[data-tab]")) {
@@ -2309,6 +2918,7 @@
       nextPuzzle();
     }
     if (name === "home") loadHomeStats();
+    if (name === "friend") openFriend(route ? route.toLowerCase() : null);
     window.scrollTo(0, 0);
   }
 
@@ -2318,6 +2928,8 @@
     if (event.key !== "Escape") return;
     mainBoard.deselect();
     puzzleBoard.deselect();
+    trainerBoard.deselect();
+    friendBoard.deselect();
   });
 
   // ------------------------------------------------------------ install and offline

@@ -1,4 +1,6 @@
 import json
+import pathlib
+import re
 import threading
 import urllib.error
 import urllib.request
@@ -329,3 +331,19 @@ def test_server_serves_icons_and_manifest(server):
     assert request(server + "/icons/missing.png")[0] == 404
     config = json.loads(request(server + "/config.js")[2].decode().split("=", 1)[1].strip().rstrip(";"))
     assert config["offline"] is False  # no service worker for the local server
+
+
+def test_friend_games_use_functions_the_setup_sql_defines():
+    root = pathlib.Path(__file__).resolve().parent.parent
+    app = (root / "chessbot" / "web" / "app.js").read_text()
+    called = set(re.findall(r'(?:rpc|friendAction)\("(\w+)"', app))
+    assert {"create_live_game", "join_live_game", "play_live_move", "resign_live_game", "live_game_draw"} <= called
+    for sql_file in ("games.sql", "upgrade-3.sql"):
+        sql = (root / "supabase" / sql_file).read_text()
+        for name in called:
+            assert f"function public.{name}(" in sql, (sql_file, name)
+            assert re.search(rf"grant execute on function public\.{name}\(.*\) to anon", sql), (sql_file, name)
+        # The seat tokens must stay out of the public key's reach.
+        assert "revoke all on public.live_game_seats from anon, authenticated;" in sql
+    html = (root / "chessbot" / "web" / "index.html").read_text()
+    assert 'data-tab="friend"' in html and 'data-view="friend"' in html
