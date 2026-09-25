@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "chessbot"
+dynamic = ["version"]
+description = "A small alpha-beta chess engine with a UCI interface."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["chess>=1.10,<2"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[project.scripts]
+chessbot = "chessbot.__main__:main"
+
+[tool.setuptools]
+packages = ["chessbot"]
+
+[tool.setuptools.dynamic]
+version = { attr = "chessbot.__version__" }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
