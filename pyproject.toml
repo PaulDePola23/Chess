@@ -22,7 +22,7 @@ chessbot = "chessbot.__main__:main"
 packages = ["chessbot"]
 
 [tool.setuptools.package-data]
-chessbot = ["web/*", "web/icons/*", "openings.json", "book.json"]
+chessbot = ["web/*", "web/icons/*", "web/stockfish/*", "openings.json", "book.json"]
 
 [tool.setuptools.dynamic]
 version = { attr = "chessbot.__version__" }

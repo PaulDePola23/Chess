@@ -103,8 +103,8 @@ The top three are named after Summer the dog, Mikayla and Paul's dog Titan,
 and Pinky the cat. Titan and Pinky are Stockfish itself, which is
 far beyond what a Python engine can reach: the page runs
 [Stockfish.js](https://github.com/nmrugg/stockfish.js) (GPL-3.0, the "lite"
-single-threaded build, about 7 MB) in a Web Worker, downloaded from jsDelivr
-the first time one of them plays, and holds it to their rating with
+single-threaded build, about 7 MB, in `chessbot/web/stockfish/`) in a Web
+Worker, loaded the first time one of them plays, and holds it to their rating with
 Stockfish's own `UCI_LimitStrength`. Club and up open from the opening book.
 
 The lower levels score the reasonable moves with a shallow search and pick

@@ -34,6 +34,8 @@ CHESSBOT_MODULES = [
     "webapi.py",
 ]
 CHESS_MODULES = ["__init__.py", "pgn.py", "engine.py", "svg.py"]
+# Stockfish.js for the Titan and Pinky levels (see web/stockfish/README.md).
+STOCKFISH_FILES = ["stockfish-18-lite-single.js", "stockfish-18-lite-single.wasm", "COPYING.txt"]
 
 SERVER_FOOTER = "<p>The engine is <code>chessbot/search.py</code> and <code>chessbot/evaluation.py</code>."
 STATIC_FOOTER = (
@@ -85,6 +87,9 @@ def build_site(out_dir: str | Path, stats_url: str | None = None, stats_key: str
     (out / "icons").mkdir(exist_ok=True)
     for icon in web.joinpath("icons").iterdir():
         (out / "icons" / icon.name).write_bytes(icon.read_bytes())
+    (out / "stockfish").mkdir(exist_ok=True)
+    for name in STOCKFISH_FILES:
+        (out / "stockfish" / name).write_bytes(web.joinpath("stockfish", name).read_bytes())
     (out / "pieces.js").write_text(pieces_js())
     (out / "config.js").write_text(config_js(stats_url, stats_key, offline=True))
     (out / "python.json").write_text(json.dumps(python_sources()))
@@ -101,6 +106,7 @@ def write_service_worker(out: Path, template: str) -> None:
     for name in files:
         digest.update(name.encode())
         digest.update((out / name).read_bytes())
-    app_files = ["./", *(name for name in files if not name.startswith("."))]
+    # Stockfish (7 MB) is cached when someone first plays Titan or Pinky, not up front.
+    app_files = ["./", *(name for name in files if not name.startswith((".", "stockfish/")))]
     worker = template.replace("__VERSION__", digest.hexdigest()[:12]).replace("__APP_FILES__", json.dumps(app_files))
     (out / "sw.js").write_text(worker)

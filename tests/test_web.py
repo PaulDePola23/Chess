@@ -348,3 +348,28 @@ def test_friend_games_use_functions_the_setup_sql_defines():
         assert "revoke all on public.live_game_seats from anon, authenticated;" in sql
     html = (root / "chessbot" / "web" / "index.html").read_text()
     assert 'data-tab="friend"' in html and 'data-view="friend"' in html
+
+
+def test_stockfish_is_served_from_the_site(tmp_path, server):
+    # Titan and Pinky load Stockfish from the page's own site (jsDelivr refuses the npm package).
+    from chessbot.site import build_site
+
+    app = (pathlib.Path(__file__).resolve().parent.parent / "chessbot" / "web" / "app.js").read_text()
+    script = re.search(r'const STOCKFISH_JS = "([^"]+)"', app).group(1)
+    assert not script.startswith(("http:", "https:", "//"))
+    wasm = script.removesuffix(".js") + ".wasm"
+
+    site = build_site(tmp_path / "site")
+    assert (site / script).read_text().startswith("/*!\n * Stockfish.js")
+    assert (site / wasm).read_bytes()[:4] == b"\0asm"
+    # Only people who pick Titan or Pinky download the 7 MB engine.
+    worker = (site / "sw.js").read_text()
+    app_files = json.loads(worker.split("const APP_FILES = ", 1)[1].split(";\n", 1)[0])
+    assert not any(name.startswith("stockfish/") for name in app_files)
+
+    status, content_type, body = request(f"{server}/{wasm}")
+    assert status == 200 and content_type == "application/wasm" and body[:4] == b"\0asm"
+    status, content_type, _ = request(f"{server}/{script}")
+    assert status == 200 and content_type.startswith("text/javascript")
+    status, _, _ = request(f"{server}/stockfish/../app.js")
+    assert status == 404

@@ -43,6 +43,7 @@ STATIC_FILES = {
     "/manifest.webmanifest": ("manifest.webmanifest", "application/manifest+json"),
 }
 ICON_TYPES = {".png": "image/png", ".svg": "image/svg+xml"}
+STOCKFISH_TYPES = {".js": "text/javascript; charset=utf-8", ".wasm": "application/wasm"}
 MAX_BODY = 1_000_000
 
 
@@ -127,6 +128,13 @@ class ChessBotHandler(BaseHTTPRequestHandler):
                 self.send_json(HTTPStatus.NOT_FOUND, {"error": f"no such icon: {path}"})
                 return
             self.send_body(HTTPStatus.OK, body, ICON_TYPES[path[path.rfind(".") :]])
+        elif path.startswith("/stockfish/") and "/" not in path[11:] and path[path.rfind(".") :] in STOCKFISH_TYPES:
+            try:
+                body = read_static("stockfish/" + path[11:])
+            except FileNotFoundError:
+                self.send_json(HTTPStatus.NOT_FOUND, {"error": f"no such file: {path}"})
+                return
+            self.send_body(HTTPStatus.OK, body, STOCKFISH_TYPES[path[path.rfind(".") :]])
         else:
             self.send_json(HTTPStatus.NOT_FOUND, {"error": f"no such page: {path}"})
 

@@ -2,8 +2,9 @@
 // and APP_FILES). It makes the site installable and playable offline:
 //   - the site's own files: network first, falling back to the cache, so the
 //     site stays up to date online and still opens offline;
-//   - Pyodide from jsDelivr and the Google Fonts files: cache first, since
-//     their URLs are versioned and never change.
+//   - Pyodide from jsDelivr, the Google Fonts files and Stockfish (for Titan
+//     and Pinky, cached when first used): cache first, since their URLs are
+//     versioned and never change.
 // Game results are never cached; the page queues them while offline.
 const VERSION = "__VERSION__";
 const APP_FILES = __APP_FILES__;
@@ -77,7 +78,10 @@ self.addEventListener("fetch", (event) => {
   const request = event.request;
   if (request.method !== "GET") return;
   const url = new URL(request.url);
-  if (url.origin === self.location.origin) {
+  if (url.origin === self.location.origin && url.pathname.includes("/stockfish/")) {
+    // Stockfish's file names carry its version, so a cached copy never goes stale.
+    event.respondWith(cacheFirst(request));
+  } else if (url.origin === self.location.origin) {
     event.respondWith(networkFirst(request));
   } else if (
     url.hostname === "cdn.jsdelivr.net" ||

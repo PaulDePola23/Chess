@@ -871,9 +871,10 @@
   // ------------------------------------------------------------ play: stockfish
 
   // Titan and Pinky are Stockfish, held to their rating with UCI_Elo. It runs
-  // in a Web Worker with Stockfish.js (GPL-3.0), downloaded from jsDelivr
-  // (about 7 MB) the first time one of them plays; the service worker keeps it.
-  const STOCKFISH_JS = "https://cdn.jsdelivr.net/npm/stockfish@18.0.8/bin/stockfish-18-lite-single.js";
+  // in a Web Worker with Stockfish.js (GPL-3.0), served from this site (about
+  // 7 MB, see web/stockfish/) the first time one of them plays; the service
+  // worker keeps it for offline play.
+  const STOCKFISH_JS = "stockfish/stockfish-18-lite-single.js";
   const STOCKFISH_MOVE_MS = 1000;
   let stockfishEngine = null;
   let stockfishLoaded = false;
@@ -881,10 +882,8 @@
   function startStockfish() {
     const listeners = new Set();
     let failure = null;
-    // A same-origin worker that loads the engine; the fragment tells Stockfish.js where its .wasm is.
-    const loader = new Blob([`importScripts(${JSON.stringify(STOCKFISH_JS)});`], { type: "text/javascript" });
-    const wasm = STOCKFISH_JS.replace(/\.js$/, ".wasm");
-    const worker = new Worker(`${URL.createObjectURL(loader)}#${encodeURIComponent(wasm)}`);
+    // Stockfish.js finds its .wasm next to itself.
+    const worker = new Worker(STOCKFISH_JS);
     worker.onmessage = (event) => {
       for (const listener of [...listeners]) listener(String(event.data));
     };
@@ -1478,6 +1477,7 @@
   // ------------------------------------------------------------ stats
 
   let statsCache = null;
+  let statsLoadedAt = 0;
   let puzzleCache = [];
 
   // Each player's latest puzzle rating and number of puzzles tried, keyed by lower-case name.
@@ -1500,13 +1500,15 @@
       ? "Everyone's games, shared online."
       : "Games played in this browser. Connect a database to share stats between everyone (see the README).";
     const message = $("stats-message");
-    if (!statsCache || force) {
+    // Reload data more than a minute old, so games and changes from elsewhere show up.
+    if (!statsCache || force || Date.now() - statsLoadedAt > 60000) {
       message.hidden = false;
       message.textContent = "Loading…";
       try {
         const [games, attempts] = await Promise.all([stats.list(), stats.listPuzzleAttempts().catch(() => [])]);
         puzzleCache = attempts;
         statsCache = games;
+        statsLoadedAt = Date.now();
         message.hidden = true;
       } catch (error) {
         message.textContent = `${error.message} Check your connection and press Refresh.`;
@@ -3079,6 +3081,13 @@
   }
 
   window.addEventListener("hashchange", showView);
+
+  // Coming back to the page refreshes the shared numbers on the tab that is showing.
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) return;
+    if (!$("view-puzzles").hidden) syncPuzzleRating();
+    if (!$("view-stats").hidden) loadStats();
+  });
 
   document.addEventListener("keydown", (event) => {
     if (event.key !== "Escape") return;
