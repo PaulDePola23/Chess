@@ -71,3 +71,15 @@ def material(board: chess.Board, color: chess.Color) -> int:
         value * (len(board.pieces(piece, color)) - len(board.pieces(piece, not color)))
         for piece, value in values.items()
     )
+
+
+def test_showcase_game_replays_legally():
+    # The game replayed on the Home tab: every move and position must match python-chess.
+    game = json.loads(resources.files("chessbot").joinpath("web", "showcase.json").read_text())
+    board = chess.Board()
+    for move in game["moves"]:
+        parsed = chess.Move.from_uci(move["uci"])
+        assert board.san(parsed) == move["san"]
+        board.push(parsed)
+        assert board.fen() == move["fen"]
+    assert board.is_checkmate()

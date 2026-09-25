@@ -47,19 +47,46 @@ class Level:
     temperature: float = 0.0  # lower levels: centipawns of randomness
     blunder_rate: float = 0.0  # lower levels: chance of a random legal move
     nodes: int | None = None  # upper levels: search node budget
+    description: str = ""  # how it plays, for players choosing a level
 
     def as_dict(self) -> dict:
-        return {"level": self.number, "name": self.name, "elo": self.elo}
+        return {"level": self.number, "name": self.name, "elo": self.elo, "description": self.description}
 
 
 LEVELS = [
-    Level(1, "Rookie", 300, rank_depth=1, temperature=150, blunder_rate=0.2),
-    Level(2, "Novice", 500, rank_depth=1, temperature=80, blunder_rate=0.08),
-    Level(3, "Casual", 900, rank_depth=2, temperature=50, blunder_rate=0.03),
-    Level(4, "Club", 1150, rank_depth=2, temperature=20),
-    Level(5, "Skilled", 1400, nodes=1_500),
-    Level(6, "Strong", 1650, nodes=12_000),
-    Level(7, "Expert", 1900, nodes=40_000),
+    Level(
+        1,
+        "Rookie",
+        300,
+        rank_depth=1,
+        temperature=150,
+        blunder_rate=0.2,
+        description="Often leaves pieces hanging. Good for your first games.",
+    ),
+    Level(
+        2,
+        "Novice",
+        500,
+        rank_depth=1,
+        temperature=80,
+        blunder_rate=0.08,
+        description="Plays sensible moves, but still gives pieces away.",
+    ),
+    Level(
+        3,
+        "Casual",
+        900,
+        rank_depth=2,
+        temperature=50,
+        blunder_rate=0.03,
+        description="Spots simple threats and misses most tactics.",
+    ),
+    Level(
+        4, "Club", 1150, rank_depth=2, temperature=20, description="Rarely blunders. Beat it with tactics and a plan."
+    ),
+    Level(5, "Skilled", 1400, nodes=1_500, description="Looks a few moves ahead and punishes loose pieces."),
+    Level(6, "Strong", 1650, nodes=12_000, description="Sees most tactics. You'll need a real advantage."),
+    Level(7, "Expert", 1900, nodes=40_000, description="The full engine. Hard to beat."),
 ]
 DEFAULT_LEVEL = 3
 

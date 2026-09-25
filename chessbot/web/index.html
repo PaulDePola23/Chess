@@ -9,24 +9,131 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
 <link rel="stylesheet" href="style.css">
+<script>
+  // Apply a saved light/dark choice before the page draws, so it doesn't flash.
+  try {
+    var theme = localStorage.getItem("chessbot.theme");
+    if (theme === "light" || theme === "dark") document.documentElement.dataset.theme = theme;
+  } catch (e) {}
+</script>
 </head>
 <body>
 <!-- app:start -->
 <div class="app">
   <header class="masthead">
-    <div class="brand">
-      <h1 class="wordmark">ChessBot</h1>
-      <p class="spec">negamax · alpha-beta · PVS · hash table · quiescence</p>
-    </div>
+    <a class="brand" href="#home" aria-label="ChessBot home">
+      <span class="wordmark">ChessBot</span>
+    </a>
     <nav class="tabs" aria-label="Sections">
+      <a href="#home" data-tab="home">Home</a>
       <a href="#play" data-tab="play">Play</a>
       <a href="#learn" data-tab="learn">Learn</a>
       <a href="#stats" data-tab="stats">Stats</a>
     </nav>
+    <button type="button" class="theme-toggle" id="theme-toggle" aria-label="Switch to dark mode">
+      <svg class="icon-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z" fill="currentColor"/></svg>
+      <svg class="icon-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.2" fill="currentColor"/><g stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M5.3 18.7l1.6-1.6M17.1 6.9l1.6-1.6"/></g></svg>
+      <span id="theme-label">Dark</span>
+    </button>
   </header>
 
+  <!-- Home -->
+  <main class="home" id="view-home" data-view="home" hidden>
+    <section class="hero">
+      <div class="hero-text">
+        <p class="eyebrow">A chess bot written in Python</p>
+        <h1 class="hero-title">Play at your level. Learn from every&nbsp;game.</h1>
+        <p class="hero-lede">Seven opponents from about 300 to 1900, a review of your biggest mistakes after every game, short lessons with puzzles, and a shared leaderboard. It's free, runs in your browser, and needs no sign-up.</p>
+        <div class="hero-actions">
+          <a class="button primary" href="#play">Play now</a>
+          <a class="button" href="#learn">Start the lessons</a>
+          <a class="text-link" href="#stats">See the leaderboard</a>
+        </div>
+        <p class="hero-credit">Made by <a href="https://github.com/PaulDePola23">Paul DePola</a>, built with Claude Code.</p>
+        <p class="hero-live" id="home-live" hidden></p>
+      </div>
+      <figure class="showcase">
+        <div class="board-wrap showcase-board" id="showcase-wrap">
+          <div class="board" id="showcase-board" aria-label="A replay of the Opera Game"></div>
+          <div class="promotion" hidden><div class="promotion-card"><div class="promotion-choices"></div></div></div>
+        </div>
+        <figcaption>
+          <span class="showcase-move" id="showcase-move">1. e4</span>
+          <span class="showcase-title" id="showcase-title">The Opera Game</span>
+          <span class="showcase-meta" id="showcase-meta"></span>
+        </figcaption>
+      </figure>
+    </section>
+
+    <section class="home-section" aria-labelledby="how-title">
+      <h2 id="how-title">How to play</h2>
+      <ol class="steps">
+        <li>
+          <h3>Enter your name</h3>
+          <p>Type it in <b>Your name</b> on the Play tab. Your finished games then count towards your record and rating on the Stats tab. Leave it empty to play without saving.</p>
+        </li>
+        <li>
+          <h3>Pick an opponent</h3>
+          <p>Choose one of the seven levels and a color, then press <b>New game</b>. Start low and move up when you begin winning.</p>
+        </li>
+        <li>
+          <h3>Make your moves</h3>
+          <p>Drag a piece, or tap it and then tap where it should go. You can also type moves like <code>e4</code>, <code>Nf3</code> or <code>O-O</code>. ChessBot shows its evaluation and what it expects next while it thinks.</p>
+        </li>
+        <li>
+          <h3>Read the review</h3>
+          <p>When the game ends, the review shows your accuracy and your biggest mistakes, each with the move you should have played. Tap one to see it on the board.</p>
+        </li>
+      </ol>
+    </section>
+
+    <section class="home-section" aria-labelledby="levels-title">
+      <h2 id="levels-title">Seven opponents</h2>
+      <p class="section-lede">Each level's rating was measured by playing it against Stockfish at fixed strengths, so treat the numbers as rough guides.</p>
+      <ol class="ladder" id="home-levels"></ol>
+    </section>
+
+    <section class="home-section" aria-labelledby="tabs-title">
+      <h2 id="tabs-title">What's here</h2>
+      <div class="features">
+        <a class="feature" href="#play">
+          <h3>Play</h3>
+          <p>Games against the bot at any of the seven levels, with take-backs, resigning, a flip-board button and PGN export for your games.</p>
+        </a>
+        <a class="feature" href="#learn">
+          <h3>Learn</h3>
+          <p>Eleven short lessons for newer players, from what the pieces are worth to forks, pins, skewers and basic checkmates, each with a puzzle.</p>
+        </a>
+        <a class="feature" href="#stats">
+          <h3>Stats</h3>
+          <p>Everyone who plays with a name, ranked by estimated rating, with each player's record by level, accuracy and recent games.</p>
+        </a>
+      </div>
+    </section>
+
+    <section class="home-section about" aria-labelledby="about-title">
+      <h2 id="about-title">How it works</h2>
+      <div class="about-grid">
+        <p>ChessBot is a small chess engine written in Python. It searches ahead with alpha-beta search, remembers positions it has already scored, and plays out every capture sequence before judging a position. On the public site your browser runs that same Python code with Pyodide, so the only thing sent anywhere is the result of a game you play under your name.</p>
+        <p>The code is open source under the GPL-3.0 license. The repository also has a terminal version, and a mode that plugs into chess apps like Cute Chess or Arena.</p>
+      </div>
+      <p class="about-links"><a href="https://github.com/PaulDePola23/testing-">Source code on GitHub</a></p>
+    </section>
+
+    <section class="home-section credits" aria-labelledby="credits-title">
+      <h2 id="credits-title">Credits</h2>
+      <dl class="credit-list">
+        <div><dt>Made by</dt><dd><a href="https://github.com/PaulDePola23">Paul DePola</a>, built with Claude Code</dd></div>
+        <div><dt>Chess rules</dt><dd><a href="https://github.com/niklasf/python-chess">python-chess</a> by Niklas Fiekas</dd></div>
+        <div><dt>Pieces</dt><dd>Colin M.L. Burnett's set, as shipped with python-chess</dd></div>
+        <div><dt>Python in the browser</dt><dd><a href="https://pyodide.org">Pyodide</a></dd></div>
+        <div><dt>Rating benchmark</dt><dd><a href="https://stockfishchess.org">Stockfish</a></dd></div>
+      </dl>
+    </section>
+  </main>
+
   <!-- Play -->
-  <main class="layout" id="view-play" data-view="play">
+  <main class="layout" id="view-play" data-view="play" hidden>
     <section class="board-area" aria-label="Game">
       <div class="player" id="player-top">
         <span class="player-name"></span>
@@ -245,6 +352,7 @@
 
   <footer class="footer">
     <p>The engine is <code>chessbot/search.py</code> and <code>chessbot/evaluation.py</code>. Rules come from python-chess, and the pieces are Colin M.L. Burnett's.</p>
+    <p>Made by <a href="https://github.com/PaulDePola23">Paul DePola</a> · <a href="https://github.com/PaulDePola23/testing-">Source code</a> · GPL-3.0</p>
   </footer>
 </div>
 <!-- app:end -->

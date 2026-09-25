@@ -107,6 +107,7 @@ def request(url, payload=None):
         ("/app.js", "text/javascript", b"chessbotBackend"),
         ("/style.css", "text/css", b"--sq-light"),
         ("/pieces.js", "text/javascript", b"CHESSBOT_PIECES"),
+        ("/showcase.json", "application/json", b"Opera Game"),
     ],
 )
 def test_serves_the_page(server, path, content_type, snippet):
@@ -154,6 +155,7 @@ def test_build_site(tmp_path, capsys):
         "python.json",
         "config.js",
         "lessons.json",
+        "showcase.json",
         ".nojekyll",
     }
     page = (site / "index.html").read_text()

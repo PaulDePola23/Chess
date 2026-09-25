@@ -1329,16 +1329,126 @@
     renderStats();
   });
 
+  // ------------------------------------------------------------ home
+
+  const showcaseBoard = createBoard($("showcase-wrap"));
+  const reducedMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const showcase = { game: null, index: 0, timer: null };
+
+  function buildLadder() {
+    const ladder = $("home-levels");
+    for (const level of LEVELS) {
+      ladder.append(
+        el(
+          "li",
+          {},
+          el("span", { class: "rating", text: String(level.elo) }),
+          el("span", { class: "name", text: level.name }),
+          el("span", { class: "how", text: level.description || "" }),
+        ),
+      );
+    }
+  }
+
+  function drawShowcase() {
+    const { game: g, index } = showcase;
+    const move = index > 0 ? g.moves[index - 1] : null;
+    showcaseBoard.render({ fen: move ? move.fen : START_FEN, orientation: "white", last: move && move.uci });
+    const label = move ? `${Math.floor((index - 1) / 2) + 1}${index % 2 === 1 ? "." : "..."} ${move.san}` : "Start";
+    $("showcase-move").textContent = label;
+  }
+
+  // Replays the showcase game move by move while the Home tab is visible.
+  function tickShowcase() {
+    const g = showcase.game;
+    const visible = !$("view-home").hidden && !document.hidden;
+    if (visible) {
+      showcase.index = showcase.index >= g.moves.length ? 0 : showcase.index + 1;
+      drawShowcase();
+    }
+    const atEnd = showcase.index >= g.moves.length;
+    showcase.timer = setTimeout(tickShowcase, atEnd ? 4500 : showcase.index === 0 ? 1500 : 1100);
+  }
+
+  async function loadShowcase() {
+    try {
+      showcase.game = await (await fetch("showcase.json")).json();
+    } catch {
+      return;
+    }
+    const g = showcase.game;
+    $("showcase-title").textContent = `${g.title}: ${g.white} vs ${g.black}`;
+    $("showcase-meta").textContent = `${g.event}. ${g.note}`;
+    if (reducedMotion) {
+      showcase.index = g.moves.length;
+      drawShowcase();
+      return;
+    }
+    drawShowcase();
+    showcase.timer = setTimeout(tickShowcase, 1500);
+  }
+
+  // One line of live numbers under the hero, when stats are shared.
+  async function loadHomeStats() {
+    if (!stats.shared) return;
+    try {
+      if (!statsCache) statsCache = await stats.list();
+    } catch {
+      return;
+    }
+    const players = new Set(statsCache.map((g) => g.player.trim().toLowerCase())).size;
+    if (!statsCache.length) return;
+    const games = statsCache.length;
+    $("home-live").textContent = `${games} game${games === 1 ? "" : "s"} played by ${players} player${players === 1 ? "" : "s"} so far.`;
+    $("home-live").hidden = false;
+  }
+
+  // ------------------------------------------------------------ theme
+
+  function currentTheme() {
+    const explicit = document.documentElement.dataset.theme;
+    if (explicit === "light" || explicit === "dark") return explicit;
+    return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  }
+
+  function renderThemeToggle() {
+    const dark = currentTheme() === "dark";
+    const button = $("theme-toggle");
+    button.classList.toggle("is-dark", dark);
+    $("theme-label").textContent = dark ? "Light" : "Dark";
+    button.setAttribute("aria-label", dark ? "Switch to light mode" : "Switch to dark mode");
+  }
+
+  $("theme-toggle").addEventListener("click", () => {
+    const next = currentTheme() === "dark" ? "light" : "dark";
+    document.documentElement.dataset.theme = next;
+    try {
+      localStorage.setItem("chessbot.theme", next);
+    } catch {
+      // The choice just won't be remembered.
+    }
+    renderThemeToggle();
+  });
+
+  if (window.matchMedia) {
+    window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", renderThemeToggle);
+  }
+
   // ------------------------------------------------------------ tabs
 
+  const VIEWS = ["home", "play", "learn", "stats"];
+
   function showView() {
-    const name = ["learn", "stats"].includes(location.hash.slice(1)) ? location.hash.slice(1) : "play";
+    const hash = location.hash.slice(1);
+    const name = VIEWS.includes(hash) ? hash : "home";
     for (const view of document.querySelectorAll("[data-view]")) view.hidden = view.dataset.view !== name;
     for (const tab of document.querySelectorAll("[data-tab]")) {
       if (tab.dataset.tab === name) tab.setAttribute("aria-current", "page");
       else tab.removeAttribute("aria-current");
     }
     if (name === "stats") loadStats();
+    if (name === "home") loadHomeStats();
+    window.scrollTo(0, 0);
   }
 
   window.addEventListener("hashchange", showView);
@@ -1353,11 +1463,14 @@
 
   async function start() {
     installPieceStyles();
+    renderThemeToggle();
     buildLevelPicker();
+    buildLadder();
     syncChoices();
     showView();
     render();
     loadLessons();
+    loadShowcase();
     backend.onStatus = (text) => {
       game.loading = text;
       renderStatus();

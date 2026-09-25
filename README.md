@@ -36,8 +36,11 @@ symbols well.
 chessbot serve --open    # or open http://localhost:8000 yourself
 ```
 
-The page has three tabs:
+The page has four tabs, plus a light/dark switch (it follows your device's
+setting until you choose):
 
+- **Home**: a title page with a replay of Morphy's Opera Game, how to play,
+  the seven levels, how it works, and credits.
 - **Play**: a board you can click or drag on (or type moves), seven opponent
   levels from Rookie (about 300) to Expert (about 1900), the engine's
   evaluation as it thinks, and buttons to take back a move, resign, flip the

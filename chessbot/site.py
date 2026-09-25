@@ -61,7 +61,7 @@ def build_site(out_dir: str | Path, stats_url: str | None = None, stats_key: str
         page = page.replace(old, new)
 
     (out / "index.html").write_text(page)
-    for name in ["app.js", "style.css", "pyodide-backend.js", "lessons.json"]:
+    for name in ["app.js", "style.css", "pyodide-backend.js", "lessons.json", "showcase.json"]:
         (out / name).write_text(web.joinpath(name).read_text())
     (out / "pieces.js").write_text(pieces_js())
     (out / "config.js").write_text(config_js(stats_url, stats_key))

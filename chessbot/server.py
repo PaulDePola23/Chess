@@ -36,6 +36,7 @@ STATIC_FILES = {
     "/app.js": ("app.js", "text/javascript; charset=utf-8"),
     "/style.css": ("style.css", "text/css; charset=utf-8"),
     "/lessons.json": ("lessons.json", "application/json"),
+    "/showcase.json": ("showcase.json", "application/json"),
 }
 MAX_BODY = 1_000_000
 
