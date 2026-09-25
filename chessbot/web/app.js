@@ -93,8 +93,15 @@
 
   function localStore() {
     const KEY = "chessbot.games.v1";
+    const PUZZLE_KEY = "chessbot.puzzle_attempts.v1";
     return {
       shared: false,
+      async listPuzzleAttempts() {
+        return storageGet(PUZZLE_KEY, []);
+      },
+      async savePuzzleAttempt(record) {
+        storageSet(PUZZLE_KEY, [record, ...storageGet(PUZZLE_KEY, [])].slice(0, 5000));
+      },
       async list() {
         return storageGet(KEY, []);
       },
@@ -151,6 +158,19 @@
 
     return {
       shared: true,
+      // Puzzle attempts need the puzzle_attempts table (supabase/upgrade-2.sql);
+      // without it they stay in this browser only.
+      async listPuzzleAttempts() {
+        const response = await fetch(`${url}/rest/v1/puzzle_attempts?select=*&order=played_at.desc&limit=5000`, { headers });
+        return response.ok ? response.json() : [];
+      },
+      async savePuzzleAttempt(record) {
+        await fetch(`${url}/rest/v1/puzzle_attempts`, {
+          method: "POST",
+          headers: { ...headers, Prefer: "return=minimal" },
+          body: JSON.stringify(record),
+        });
+      },
       async list() {
         await flushPending();
         const response = await fetch(`${url}/rest/v1/games?select=*&order=played_at.desc&limit=5000`, { headers });
@@ -450,6 +470,7 @@
     state: null,
     token: 0, // bumped on every new game so late replies are ignored
     thinking: false,
+    pending: false, // the player's move is being processed
     engineInfo: null,
     review: null, // {status, items, done, total, error}
     viewing: null, // index into review.items shown on the board
@@ -488,7 +509,12 @@
 
   const whiteAtBottom = () => (game.human === "white") !== game.flipped;
   const humanToMove = () =>
-    Boolean(game.state) && !outcome().over && game.state.turn === game.human && !game.thinking && game.viewing === null;
+    Boolean(game.state) &&
+    !outcome().over &&
+    game.state.turn === game.human &&
+    !game.thinking &&
+    !game.pending &&
+    game.viewing === null;
   const humanPlies = () => game.moves.map((_, i) => i).filter((i) => (i % 2 === 0 ? "white" : "black") === game.human);
   const rated = () => game.takebacks === 0 && game.hints === 0;
 
@@ -770,12 +796,19 @@
   }
 
   async function playHumanMove(uci) {
+    if (game.pending) return;
+    game.pending = true; // no second move until this one is processed
+    renderBoard();
     try {
-      if (!(await setMoves([...game.moves, uci]))) return;
+      const applied = await setMoves([...game.moves, uci]);
+      game.pending = false;
+      if (!applied) return;
       if (outcome().over) finishGame();
       else engineTurn();
     } catch (error) {
+      game.pending = false;
       showError(error);
+      render();
     }
   }
 
@@ -1280,6 +1313,21 @@
   // ------------------------------------------------------------ stats
 
   let statsCache = null;
+  let puzzleCache = [];
+
+  // Each player's latest puzzle rating and number of puzzles tried, keyed by lower-case name.
+  function puzzleRatings() {
+    const byPlayer = new Map();
+    for (const a of [...puzzleCache].sort((x, y) => (x.played_at < y.played_at ? -1 : 1))) {
+      const key = a.player.trim().toLowerCase();
+      const entry = byPlayer.get(key) || { rating: null, tried: 0, solved: 0 };
+      entry.rating = a.rating_after;
+      entry.tried++;
+      if (a.solved) entry.solved++;
+      byPlayer.set(key, entry);
+    }
+    return byPlayer;
+  }
   let statsPlayer = null;
 
   async function loadStats(force = false) {
@@ -1291,7 +1339,9 @@
       message.hidden = false;
       message.textContent = "Loading…";
       try {
-        statsCache = await stats.list();
+        const [games, attempts] = await Promise.all([stats.list(), stats.listPuzzleAttempts().catch(() => [])]);
+        puzzleCache = attempts;
+        statsCache = games;
         message.hidden = true;
       } catch (error) {
         message.textContent = `${error.message} Check your connection and press Refresh.`;
@@ -1308,7 +1358,17 @@
       if (!players.has(key)) players.set(key, { name: g.player.trim(), games: [] });
       players.get(key).games.push(g);
     }
-    return [...players.values()].map((p) => ({ ...p, ...summarizeGames(p.games) }));
+    // People who have only done puzzles belong on the board too.
+    for (const a of puzzleCache) {
+      const key = a.player.trim().toLowerCase();
+      if (!players.has(key)) players.set(key, { name: a.player.trim(), games: [] });
+    }
+    const puzzles = puzzleRatings();
+    return [...players.values()].map((p) => ({
+      ...p,
+      ...summarizeGames(p.games),
+      puzzles: puzzles.get(p.name.toLowerCase()) || null,
+    }));
   }
 
   function summarizeGames(games) {
@@ -1402,7 +1462,7 @@
           {},
           el("td", {
             class: "empty",
-            colspan: "9",
+            colspan: "10",
             text: "No games yet. Put your name in on the Play tab and finish a game to appear here.",
           }),
         ),
@@ -1421,6 +1481,7 @@
           el("td", { class: "num", text: String(i + 1) }),
           el("td", {}, el("button", { type: "button", class: "player-link", text: p.name, onclick: open })),
           el("td", { class: "num" }, ratingCell(p)),
+          el("td", { class: "num", text: p.puzzles ? String(p.puzzles.rating) : "–" }),
           el("td", { class: "num", text: String(p.count) }),
           el("td", { class: "num", text: wdl(p) }),
           el("td", { class: "num", text: pct(p.score) }),
@@ -1446,6 +1507,11 @@
       tile("Score", pct(p.score)),
       tile("Accuracy", acc(p.accuracy), "average over reviewed games"),
       tile("Blunders per game", p.blunders === null ? "–" : p.blunders.toFixed(1)),
+      tile(
+        "Puzzle rating",
+        p.puzzles ? String(p.puzzles.rating) : "–",
+        p.puzzles ? `${p.puzzles.solved} of ${p.puzzles.tried} solved` : "no puzzles yet",
+      ),
     );
     renderRatingChart(ratingHistory(p.games));
     renderBadges(p.games);
@@ -1882,6 +1948,244 @@
     renderStats();
   });
 
+  // ------------------------------------------------------------ puzzles
+
+  const TRAINER_KEY = "chessbot.trainer.v1";
+  const trainerBoard = createBoard($("trainer-wrap"));
+  const trainer = {
+    puzzles: null,
+    puzzle: null,
+    played: [], // moves played so far in this puzzle (the opponent's mistake first)
+    state: null,
+    result: null, // null while unresolved, then "solved" or "failed"
+    done: false, // the whole solution is on the board
+    token: 0,
+    hintSquare: null,
+    busy: false, // a move is being checked or the opponent is replying
+    progress: Object.assign(
+      { rating: 1000, attempts: 0, solved: 0, streak: 0, best: 0, seen: [] },
+      storageGet(TRAINER_KEY, {}) || {},
+    ),
+  };
+
+  const saveTrainer = () => storageSet(TRAINER_KEY, trainer.progress);
+  const solverColor = () => (trainer.puzzle.fen.split(" ")[1] === "w" ? "black" : "white");
+  const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  async function loadPuzzles() {
+    if (trainer.puzzles) return;
+    try {
+      trainer.puzzles = await (await fetch("puzzles.json")).json();
+    } catch {
+      trainer.puzzles = [];
+    }
+  }
+
+  function pickPuzzle() {
+    const { rating, seen } = trainer.progress;
+    const unseen = trainer.puzzles.filter((p) => !seen.includes(p.id));
+    const pool = unseen.length ? unseen : trainer.puzzles;
+    if (!unseen.length) trainer.progress.seen = [];
+    for (const range of [150, 300, 600, Infinity]) {
+      const near = pool.filter((p) => Math.abs(p.rating - rating) <= range);
+      if (near.length) return near[Math.floor(Math.random() * near.length)];
+    }
+    return null;
+  }
+
+  async function nextPuzzle() {
+    const token = ++trainer.token;
+    await loadPuzzles();
+    await backend.ready;
+    trainer.puzzle = pickPuzzle();
+    if (!trainer.puzzle) {
+      $("trainer-prompt").textContent = "No puzzles are available right now.";
+      return;
+    }
+    trainer.played = [];
+    trainer.result = null;
+    trainer.done = false;
+    trainer.hintSquare = null;
+    trainer.state = await backend.state([], trainer.puzzle.fen);
+    if (token !== trainer.token) return;
+    const side = solverColor() === "white" ? "White" : "Black";
+    $("trainer-prompt").textContent = `Find the best move for ${side}.`;
+    setTrainerFeedback(`${side === "White" ? "Black" : "White"} just moved. Can you punish it?`, "");
+    $("trainer-change").textContent = "";
+    renderTrainer();
+    await wait(700);
+    if (token !== trainer.token) return;
+    await trainerPlay(trainer.puzzle.moves[0]);
+  }
+
+  async function trainerPlay(uci) {
+    const token = trainer.token;
+    trainer.played.push(uci);
+    const state = await backend.state(trainer.played, trainer.puzzle.fen);
+    if (token !== trainer.token) return;
+    trainer.state = state;
+    soundForLastMove(state);
+    renderTrainer();
+  }
+
+  function renderTrainer() {
+    const puzzle = trainer.puzzle;
+    const p = trainer.progress;
+    $("trainer-rating").textContent = String(Math.round(p.rating));
+    $("trainer-solved").textContent = String(p.solved);
+    $("trainer-streak").textContent = String(p.streak);
+    $("trainer-best").textContent = String(p.best);
+    $("trainer-note").textContent = playerName.trim()
+      ? `Saving your puzzles as ${playerName.trim()}.`
+      : "Enter your name on the Play tab to put your puzzle rating on the Stats page.";
+    if (!puzzle || !trainer.state) {
+      trainerBoard.render({ fen: puzzle ? puzzle.fen : START_FEN });
+      return;
+    }
+    const s = trainer.state;
+    const solver = solverColor();
+    const canMove = !trainer.done && !trainer.busy && s.turn === solver && !s.over && trainer.played.length > 0;
+    const marks = {};
+    if (trainer.hintSquare && canMove) marks[trainer.hintSquare] = "good";
+    trainerBoard.render({
+      fen: s.fen,
+      orientation: solver,
+      last: s.last,
+      check: s.check,
+      marks,
+      player: canMove ? solver : null,
+      legal: canMove ? s.legal : [],
+      onMove: trainerMove,
+    });
+    $("trainer-facts").hidden = !trainer.result;
+    if (trainer.result) $("trainer-facts").textContent = `Puzzle rating ${puzzle.rating} · ${puzzle.theme}`;
+    $("trainer-hint").disabled = !canMove || Boolean(trainer.hintSquare);
+    $("trainer-solution").disabled = trainer.done || !trainer.played.length;
+    $("trainer-next").textContent = trainer.done ? "Next puzzle" : "Skip to the next puzzle";
+  }
+
+  function setTrainerFeedback(text, kind) {
+    const node = $("trainer-feedback");
+    node.textContent = text;
+    node.className = "trainer-feedback" + (kind ? ` ${kind}` : "");
+  }
+
+  // The first mistake, hint or look at the solution settles the puzzle as failed.
+  function resolvePuzzle(solved) {
+    if (trainer.result) return;
+    trainer.result = solved ? "solved" : "failed";
+    const p = trainer.progress;
+    const k = p.attempts < 20 ? 40 : 20;
+    const expected = 1 / (1 + Math.pow(10, (trainer.puzzle.rating - p.rating) / 400));
+    const change = Math.round(k * ((solved ? 1 : 0) - expected));
+    p.rating = Math.max(100, p.rating + change);
+    p.attempts++;
+    if (solved) {
+      p.solved++;
+      p.streak++;
+      p.best = Math.max(p.best, p.streak);
+    } else {
+      p.streak = 0;
+    }
+    p.seen = [...p.seen, trainer.puzzle.id].slice(-2000);
+    saveTrainer();
+    $("trainer-change").textContent = change >= 0 ? `+${change}` : `−${-change}`;
+    $("trainer-change").className = "trainer-change " + (change >= 0 ? "up" : "down");
+    const name = playerName.trim();
+    if (name) {
+      stats
+        .savePuzzleAttempt({
+          id: uuid(),
+          played_at: new Date().toISOString(),
+          player: name.slice(0, 24),
+          puzzle_id: trainer.puzzle.id,
+          puzzle_rating: trainer.puzzle.rating,
+          solved,
+          rating_after: Math.round(p.rating),
+        })
+        .catch(() => {});
+      statsCache = null;
+    }
+  }
+
+  async function trainerMove(uci) {
+    if (trainer.busy) return;
+    trainer.busy = true;
+    try {
+      await checkTrainerMove(uci);
+    } finally {
+      trainer.busy = false;
+      renderTrainer();
+    }
+  }
+
+  async function checkTrainerMove(uci) {
+    const token = trainer.token;
+    renderTrainer();
+    const moves = trainer.puzzle.moves;
+    const expected = moves[trainer.played.length];
+    let correct = uci === expected;
+    if (!correct) {
+      // Any checkmate is as good as the one in the answer key.
+      const after = await backend.state([...trainer.played, uci], trainer.puzzle.fen);
+      correct = after.over && after.reason === "checkmate";
+    }
+    if (token !== trainer.token) return;
+    if (!correct) {
+      resolvePuzzle(false);
+      setTrainerFeedback("That's not it. Try again, or look at the solution.", "wrong");
+      renderTrainer();
+      return;
+    }
+    trainer.hintSquare = null;
+    await trainerPlay(uci);
+    if (token !== trainer.token) return;
+    if (trainer.played.length >= moves.length || trainer.state.over) {
+      finishPuzzle(true);
+      return;
+    }
+    setTrainerFeedback("Good. Keep going…", "right");
+    await wait(500);
+    if (token !== trainer.token) return;
+    await trainerPlay(moves[trainer.played.length]);
+    setTrainerFeedback("Your move again.", "right");
+  }
+
+  function finishPuzzle(solvedNow) {
+    trainer.done = true;
+    if (solvedNow && !trainer.result) resolvePuzzle(true);
+    const clean = trainer.result === "solved";
+    setTrainerFeedback(clean ? "Solved!" : "That's the solution. On to the next one.", clean ? "right" : "");
+    if (clean) playSound("end");
+    renderTrainer();
+  }
+
+  async function showTrainerSolution() {
+    const token = trainer.token;
+    resolvePuzzle(false);
+    trainer.done = true;
+    renderTrainer();
+    while (trainer.played.length < trainer.puzzle.moves.length) {
+      await wait(600);
+      if (token !== trainer.token) return;
+      await trainerPlay(trainer.puzzle.moves[trainer.played.length]);
+    }
+    finishPuzzle(false);
+  }
+
+  $("trainer-hint").addEventListener("click", () => {
+    resolvePuzzle(false);
+    trainer.hintSquare = trainer.puzzle.moves[trainer.played.length].slice(0, 2);
+    setTrainerFeedback("Hint: move the highlighted piece.", "");
+    renderTrainer();
+  });
+  $("trainer-solution").addEventListener("click", showTrainerSolution);
+  $("trainer-next").addEventListener("click", () => {
+    // Skipping an unsolved puzzle counts as a miss.
+    if (trainer.puzzle && !trainer.result && trainer.played.length) resolvePuzzle(false);
+    nextPuzzle();
+  });
+
   // ------------------------------------------------------------ home
 
   const showcaseBoard = createBoard($("showcase-wrap"));
@@ -1988,7 +2292,7 @@
 
   // ------------------------------------------------------------ tabs
 
-  const VIEWS = ["home", "play", "learn", "stats"];
+  const VIEWS = ["home", "play", "puzzles", "learn", "stats"];
 
   function showView() {
     const hash = location.hash.slice(1);
@@ -1999,6 +2303,10 @@
       else tab.removeAttribute("aria-current");
     }
     if (name === "stats") loadStats();
+    if (name === "puzzles" && !trainer.puzzle) {
+      renderTrainer();
+      nextPuzzle();
+    }
     if (name === "home") loadHomeStats();
     window.scrollTo(0, 0);
   }

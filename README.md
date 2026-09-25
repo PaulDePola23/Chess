@@ -37,7 +37,7 @@ symbols well.
 chessbot serve --open    # or open http://localhost:8000 yourself
 ```
 
-The page has four tabs, plus a light/dark switch (it follows your device's
+The page has five tabs, plus a light/dark switch (it follows your device's
 setting until you choose):
 
 - **Home**: a title page with a replay of Morphy's Opera Game, how to play,
@@ -51,6 +51,9 @@ setting until you choose):
   unrated. Moves slide into place, with optional sounds. When a game ends, a review lists your
   biggest mistakes with the move you should have played; click one to see
   it on the board.
+- **Puzzles**: tactics taken from real games, picked to match your puzzle
+  rating, which goes up when you solve one on the first try and down when you
+  miss, use a hint or look at the solution.
 - **Learn**: eleven short lessons for newer players (piece values, opening
   principles, checks-captures-threats, forks, pins, skewers, discovered
   attacks and basic mates), each with a puzzle to solve on the board.
@@ -105,9 +108,21 @@ Games where they took back a move don't count towards it.
 
 ### Shared stats
 
-If your table was created before hints and replays were added, also run
-[`supabase/upgrade-1.sql`](supabase/upgrade-1.sql); until then games still
-save, just without those details.
+If your tables were created from an older `games.sql`, also run the upgrades:
+[`supabase/upgrade-1.sql`](supabase/upgrade-1.sql) (hints and replays; until
+then games still save, just without those details) and
+[`supabase/upgrade-2.sql`](supabase/upgrade-2.sql) (puzzle ratings; until then
+they stay in each browser).
+
+### Puzzles
+
+`scripts/generate_puzzles.py` builds `chessbot/web/puzzles.json` the way
+Lichess builds its puzzle database, on a smaller scale: Stockfish plays itself
+at club strength, full-strength Stockfish finds the positions where one side
+has just blundered and exactly one move punishes it, and the solution runs on
+while there's still exactly one winning move. Each puzzle is rated by the
+weakest ChessBot search that finds the answer. `tests/test_puzzles.py` checks
+every puzzle is legal.
 
 The public site keeps everyone's games in a Supabase project, configured in
 `.github/workflows/pages.yml`. Without one (for example in a fork, or with
