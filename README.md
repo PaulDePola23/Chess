@@ -117,9 +117,11 @@ which plays the levels against each other and against Stockfish 16 at fixed
 doesn't match any online site exactly), and the ones below Stockfish's
 minimum of 1320 are extrapolated from games between levels.
 
-A player's estimated rating is the average rating of the levels they played
-plus 400 × (wins − losses) ÷ games, the usual "performance rating" formula.
-Games where they took back a move don't count towards it.
+A player's rating is an Elo, like the puzzle rating: everyone starts at
+1000 and each rated game moves it up or down depending on the level they
+faced, most when the result is a surprise. Games with take-backs or hints
+don't count, and games from before ratings began stay in the records
+without moving anyone's rating.
 
 ### Shared stats
 

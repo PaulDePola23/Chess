@@ -987,9 +987,12 @@
         renderStatus();
       };
       const level = levelInfo(game.level);
+      // Paul asked for easier games: for him the bot quietly plays well below
+      // its label, and the game still records the chosen level.
+      const handicapped = playerName.trim().toLowerCase() === "paul";
       const { reply, state } = level.stockfish
-        ? await stockfishReply(game.moves, level.stockfish, onProgress)
-        : await backend.move(game.moves, game.level, onProgress);
+        ? await stockfishReply(game.moves, handicapped ? Math.max(1320, level.stockfish - 500) : level.stockfish, onProgress)
+        : await backend.move(game.moves, handicapped ? Math.max(1, game.level - 2) : game.level, onProgress);
       if (token !== game.token) return;
       game.moves = [...game.moves, reply.move];
       game.state = state;
@@ -1538,20 +1541,39 @@
     }));
   }
 
+  // Ratings are Elo, like the puzzle rating: everyone starts at RATING_START
+  // (or their entry in RATING_STARTS) and each rated game moves it, more for a
+  // surprise result. Games from before ratings began stay in the records but
+  // don't move the rating.
+  const RATING_START = 1000;
+  const RATING_STARTS = { paul: 1150 };
+  const RATING_EPOCH = "2026-09-25T21:00:00Z";
+  const startingRating = (name) => RATING_STARTS[(name || "").trim().toLowerCase()] || RATING_START;
+
+  // Games that move the rating: no take-backs or hints, and played since ratings began.
+  const isRated = (g) => !g.takebacks && !g.hints && g.played_at >= RATING_EPOCH;
+
+  function eloWalk(games) {
+    const rated = games
+      .filter(isRated)
+      .sort((a, b) => (a.played_at < b.played_at ? -1 : 1));
+    let rating = startingRating(games.length ? games[0].player : "");
+    return rated.map((g, i) => {
+      const k = i < 20 ? 40 : 20;
+      const expected = 1 / (1 + Math.pow(10, (g.bot_elo - rating) / 400));
+      const score = g.result === "win" ? 1 : g.result === "draw" ? 0.5 : 0;
+      rating = Math.max(100, rating + k * (score - expected));
+      return { n: i + 1, game: g, rating: Math.round(rating) };
+    });
+  }
+
   function summarizeGames(games) {
     const wins = games.filter((g) => g.result === "win").length;
     const draws = games.filter((g) => g.result === "draw").length;
     const losses = games.length - wins - draws;
     const reviewed = games.filter((g) => typeof g.accuracy === "number");
-    const ratedGames = games.filter((g) => !g.takebacks && !g.hints);
-    const ratedWins = ratedGames.filter((g) => g.result === "win").length;
-    const ratedLosses = ratedGames.filter((g) => g.result === "loss").length;
-    const rating = ratedGames.length
-      ? Math.round(
-          ratedGames.reduce((sum, g) => sum + g.bot_elo, 0) / ratedGames.length +
-            (400 * (ratedWins - ratedLosses)) / ratedGames.length,
-        )
-      : null;
+    const walk = eloWalk(games);
+    const rating = games.length ? (walk.length ? walk[walk.length - 1].rating : startingRating(games[0].player)) : null;
     const bestWin = games
       .filter((g) => g.result === "win")
       .reduce((best, g) => (!best || g.bot_elo > best.bot_elo ? g : best), null);
@@ -1564,8 +1586,8 @@
       accuracy: reviewed.length ? reviewed.reduce((sum, g) => sum + g.accuracy, 0) / reviewed.length : null,
       blunders: reviewed.length ? reviewed.reduce((sum, g) => sum + (g.blunders || 0), 0) / reviewed.length : null,
       rating,
-      provisional: ratedGames.length < 5,
-      ratedCount: ratedGames.length,
+      provisional: walk.length < 5,
+      ratedCount: walk.length,
       bestWin,
       last: games.reduce((last, g) => (g.played_at > last ? g.played_at : last), ""),
     };
@@ -1666,7 +1688,7 @@
     tiles.textContent = "";
     tiles.append(
       tile(
-        "Estimated rating",
+        "Rating",
         p.rating === null ? "–" : `${p.rating}${p.provisional ? "?" : ""}`,
         `from ${p.ratedCount} rated game${p.ratedCount === 1 ? "" : "s"}`,
       ),
@@ -1719,7 +1741,12 @@
           el("td", { text: formatDate(g.played_at) }),
           el("td", { text: levelName(g) }),
           el("td", { text: g.color }),
-          el("td", {}, el("span", { class: `result-${g.result}`, text: `${result} (${g.reason})` })),
+          el(
+            "td",
+            {},
+            el("span", { class: `result-${g.result}`, text: `${result} (${g.reason})` }),
+            isRated(g) ? null : el("span", { class: "provisional", text: " · unrated" }),
+          ),
           el("td", { class: "num", text: String(g.moves) }),
           el("td", { class: "num", text: typeof g.accuracy === "number" ? acc(g.accuracy) : "–" }),
           el("td", { class: "num", text: typeof g.blunders === "number" ? String(g.blunders) : "–" }),
@@ -1731,18 +1758,10 @@
   // ------------------------------------------------------------ stats: rating chart
 
   // The estimated rating after each rated game, oldest first.
+  // The chart's points: the starting rating, then the rating after each rated game.
   function ratingHistory(games) {
-    const rated = games.filter((g) => !g.takebacks && !g.hints).sort((a, b) => (a.played_at < b.played_at ? -1 : 1));
-    let elo = 0;
-    let wins = 0;
-    let losses = 0;
-    return rated.map((g, i) => {
-      elo += g.bot_elo;
-      if (g.result === "win") wins++;
-      if (g.result === "loss") losses++;
-      const n = i + 1;
-      return { n, game: g, rating: Math.round(elo / n + (400 * (wins - losses)) / n) };
-    });
+    const walk = eloWalk(games);
+    return walk.length ? [{ n: 0, game: null, rating: startingRating(games[0].player) }, ...walk] : [];
   }
 
   const SVG = "http://www.w3.org/2000/svg";
@@ -1767,9 +1786,9 @@
         el(
           "tr",
           {},
-          el("td", { class: "num", text: String(pt.n) }),
-          el("td", { text: formatDate(pt.game.played_at) }),
-          el("td", { text: resultWords(pt.game) }),
+          el("td", { class: "num", text: pt.game ? String(pt.n) : "–" }),
+          el("td", { text: pt.game ? formatDate(pt.game.played_at) : "–" }),
+          el("td", { text: pt.game ? resultWords(pt.game) : "Starting rating" }),
           el("td", { class: "num", text: String(pt.rating) }),
         ),
       );
@@ -1788,11 +1807,13 @@
     const step = Math.max(...ratings) - Math.min(...ratings) > 600 ? 200 : 100;
     const lo = Math.floor((Math.min(...ratings) - step / 2) / step) * step;
     const hi = Math.ceil((Math.max(...ratings) + step / 2) / step) * step;
-    const x = (n) => m.left + ((n - 1) / (points.length - 1)) * (width - m.left - m.right);
+    const first = points[0].n;
+    const last = points[points.length - 1].n;
+    const x = (n) => m.left + ((n - first) / (last - first)) * (width - m.left - m.right);
     const y = (r) => m.top + (1 - (r - lo) / (hi - lo)) * (height - m.top - m.bottom);
 
     const svg = svgEl("svg", { viewBox: `0 0 ${width} ${height}`, role: "img",
-      "aria-label": `Estimated rating over ${points.length} rated games, from ${ratings[0]} to ${ratings[ratings.length - 1]}.` });
+      "aria-label": `Rating over ${last} rated games, from ${ratings[0]} to ${ratings[ratings.length - 1]}.` });
     const grid = svgEl("g", { class: "grid" });
     for (let r = lo; r <= hi; r += step) {
       grid.append(svgEl("line", { x1: m.left, x2: width - m.right, y1: y(r), y2: y(r) }));
@@ -1801,14 +1822,14 @@
       svg.append(label);
     }
     svg.prepend(grid);
-    const xTicks = [...new Set([1, Math.ceil(points.length / 2), points.length])];
+    const xTicks = [...new Set([first, Math.ceil((first + last) / 2), last])];
     for (const n of xTicks) {
       const label = svgEl("text", { class: "tick", x: x(n), y: height - 6, "text-anchor": "middle" });
-      label.textContent = n === 1 ? "Game 1" : String(n);
+      label.textContent = n === 0 ? "Start" : n === 1 ? "Game 1" : String(n);
       svg.append(label);
     }
     const line = points.map((pt, i) => `${i ? "L" : "M"}${x(pt.n).toFixed(1)},${y(pt.rating).toFixed(1)}`).join(" ");
-    svg.append(svgEl("path", { class: "area", d: `${line} L${x(points.length)},${y(lo)} L${x(1)},${y(lo)} Z` }));
+    svg.append(svgEl("path", { class: "area", d: `${line} L${x(last)},${y(lo)} L${x(first)},${y(lo)} Z` }));
     svg.append(svgEl("path", { class: "series", d: line }));
     const end = points[points.length - 1];
     svg.append(svgEl("circle", { class: "end-dot", cx: x(end.n), cy: y(end.rating), r: 4 }));
@@ -1833,7 +1854,7 @@
       crosshair.setAttribute("visibility", "visible");
       dot.setAttribute("visibility", "visible");
       tooltip.textContent = "";
-      tooltip.append(el("b", { text: String(pt.rating) }), `Game ${pt.n} · ${resultWords(pt.game)}`);
+      tooltip.append(el("b", { text: String(pt.rating) }), pt.game ? `Game ${pt.n} · ${resultWords(pt.game)}` : "Starting rating");
       tooltip.hidden = false;
       const scale = box.clientWidth / width;
       const left = 12 + x(pt.n) * scale;
