@@ -42,6 +42,20 @@ machine, in Python. The server uses only the standard library and listens
 on `127.0.0.1`, so only your computer can reach it (use `--host 0.0.0.0` to
 play from another device on your network).
 
+### Online, with no install
+
+`chessbot build-site` builds a static version of the same page in which the
+engine runs in the visitor's browser: [Pyodide](https://pyodide.org) (Python
+compiled to WebAssembly) loads the real `chessbot` and `python-chess` code.
+The first visit downloads about 13 MB, and it searches roughly 3–4 times
+slower than native Python.
+
+The **Website** workflow (`.github/workflows/pages.yml`) builds this site and
+publishes it with GitHub Pages on every push to the default branch, at
+`https://<user>.github.io/<repo>/`. To switch it on once, open the repo's
+**Settings → Pages** and set **Source** to **GitHub Actions** (Pages on a
+private repo needs a paid GitHub plan), then re-run the workflow.
+
 ### Analysing a position
 
 To get the best move in a position:
@@ -90,7 +104,8 @@ from the opening.
 | [`chessbot/search.py`](chessbot/search.py) | Chooses the move. Iterative-deepening alpha-beta (negamax with PVS), a transposition table, quiescence search, MVV-LVA / killer / history move ordering, null-move pruning, late-move reductions, check extensions, mate-distance scoring, and repetition and fifty-move draw detection. |
 | [`chessbot/uci.py`](chessbot/uci.py) | The UCI protocol. The search runs on its own thread so `stop` and `isready` get answered while it is thinking. |
 | [`chessbot/play.py`](chessbot/play.py) | The terminal game. |
-| [`chessbot/webapi.py`](chessbot/webapi.py), [`chessbot/server.py`](chessbot/server.py), [`chessbot/web/`](chessbot/web) | The browser game. The page keeps the game as a list of moves and asks the server for legal moves, notation and the engine's reply, so all chess logic stays in Python. |
+| [`chessbot/webapi.py`](chessbot/webapi.py), [`chessbot/server.py`](chessbot/server.py), [`chessbot/web/`](chessbot/web) | The browser game. The page keeps the game as a list of moves and asks a backend for legal moves, notation and the engine's reply, so all chess logic stays in Python. |
+| [`chessbot/site.py`](chessbot/site.py), [`chessbot/web/pyodide-backend.js`](chessbot/web/pyodide-backend.js) | The static site: the same page, answered by the engine running in a Web Worker with Pyodide instead of by the server. |
 | [`chessbot/__main__.py`](chessbot/__main__.py) | The `chessbot` command. |
 
 From Python:
@@ -112,6 +127,8 @@ ruff format .        # format
 ```
 
 CI runs the same checks on Python 3.10 to 3.13 for every push and pull request.
+`chessbot build-site _site` followed by `python -m http.server -d _site` lets you
+try the static site locally.
 
 Ideas for making it stronger: an opening book, static exchange evaluation
 (SEE) to prune bad captures, king safety and pawn-structure terms in the

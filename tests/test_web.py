@@ -137,3 +137,25 @@ def test_api_errors(server):
     assert "illegal move" in json.loads(body)["error"]
     assert request(server + "/api/nothing", {})[0] == 404
     assert request(server + "/missing.html")[0] == 404
+
+
+def test_build_site(tmp_path, capsys):
+    from chessbot.__main__ import main
+
+    assert main(["build-site", str(tmp_path / "site")]) == 0
+    site = tmp_path / "site"
+    assert {p.name for p in site.iterdir()} >= {
+        "index.html",
+        "app.js",
+        "style.css",
+        "pieces.js",
+        "pyodide-backend.js",
+        "python.json",
+        ".nojekyll",
+    }
+    page = (site / "index.html").read_text()
+    assert page.index("pyodide-backend.js") < page.index('src="app.js"')
+    assert "running in your browser with Pyodide" in page
+    sources = json.loads((site / "python.json").read_text())
+    assert {"chessbot/search.py", "chessbot/webapi.py", "chess/__init__.py", "chess/pgn.py"} <= set(sources)
+    assert "class Searcher" in sources["chessbot/search.py"]
