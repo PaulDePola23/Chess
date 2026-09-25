@@ -21,7 +21,9 @@ create table if not exists public.games (
   mistakes     smallint check (mistakes between 0 and 2000),
   inaccuracies smallint check (inaccuracies between 0 and 2000),
   takebacks    smallint not null default 0 check (takebacks between 0 and 2000),
-  opening      text check (char_length(opening) <= 80)
+  opening      text check (char_length(opening) <= 80),
+  hints        smallint not null default 0 check (hints between 0 and 2000),
+  moves_uci    text check (char_length(moves_uci) <= 10000)
 );
 
 create index if not exists games_played_at on public.games (played_at desc);

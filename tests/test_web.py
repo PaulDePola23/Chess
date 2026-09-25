@@ -9,7 +9,7 @@ import pytest
 from chessbot.levels import LEVELS
 from chessbot.search import Searcher
 from chessbot.server import ChessBotServer, config_js, pieces_js
-from chessbot.webapi import engine_reply, game_state, move_accuracy, review_move, winning_chances
+from chessbot.webapi import engine_reply, game_state, move_accuracy, review_move, suggest_move, winning_chances
 
 
 def test_initial_state():
@@ -163,6 +163,7 @@ def test_build_site(tmp_path, capsys):
     assert "running in your browser with Pyodide" in page
     sources = json.loads((site / "python.json").read_text())
     assert {"chessbot/search.py", "chessbot/levels.py", "chessbot/webapi.py", "chess/__init__.py"} <= set(sources)
+    assert json.loads(sources["chessbot/openings.json"])  # opening names ship with the engine
     assert "class Searcher" in sources["chessbot/search.py"]
 
 
@@ -235,3 +236,36 @@ def test_api_move_at_a_level_and_review(server):
     assert status == 200
     assert json.loads(body)["san"] == "e4"
     assert request(server + "/api/move", {"moves": [], "level": 42})[0] == 400
+
+
+def test_hanging_pieces():
+    # 1. e4 e5 2. Qh5 Nf6: the knight attacks the queen and e4; the queen attacks e5.
+    state = game_state(["e2e4", "e7e5", "d1h5", "g8f6"])
+    assert state["hanging"] == {"white": ["e4", "h5"], "black": ["e5"]}
+    assert game_state([])["hanging"] == {"white": [], "black": []}
+
+
+def test_opening_names():
+    assert game_state(["e2e4", "e7e5", "g1f3", "b8c6", "f1c4", "f8c5"])["opening"] == {
+        "eco": "C50",
+        "name": "Italian Game: Giuoco Piano",
+    }
+    # A transposition still finds the name.
+    nimzo = ["d2d4", "g8f6", "c2c4", "e7e6", "b1c3", "f8b4"]
+    other_order = ["c2c4", "e7e6", "d2d4", "g8f6", "b1c3", "f8b4"]
+    assert game_state(nimzo)["opening"] == game_state(other_order)["opening"]
+    assert game_state([])["opening"] is None
+    assert game_state([], fen="6k1/5ppp/8/8/8/8/8/R5K1 w - - 0 1")["opening"] is None
+
+
+def test_suggest_move_finds_mate():
+    hint = suggest_move(["e2e4", "e7e5", "d1h5", "b8c6", "f1c4", "g8f6"], Searcher())
+    assert hint == {"move": "h5f7", "san": "Qxf7#"}
+    with pytest.raises(ValueError):
+        suggest_move(["f2f3", "e7e5", "g2g4", "d8h4"], Searcher())
+
+
+def test_api_hint(server):
+    status, _, body = request(server + "/api/hint", {"moves": ["e2e4", "e7e5", "d1h5", "b8c6", "f1c4", "g8f6"]})
+    assert status == 200
+    assert json.loads(body)["san"] == "Qxf7#"

@@ -16,6 +16,7 @@ import chess
 import chess.pgn
 
 from .levels import choose_move, get_level
+from .openings import opening_name
 from .search import MATE_SCORE, MATE_THRESHOLD, Searcher, SearchResult
 
 MIN_THINK_TIME = 0.05
@@ -29,6 +30,12 @@ REVIEW_DEPTH = 3
 # Drops in winning chances (on a -1..1 scale) that make a move an
 # inaccuracy, a mistake or a blunder. These are the thresholds lichess uses.
 VERDICTS = [(0.3, "blunder"), (0.2, "mistake"), (0.1, "inaccuracy")]
+
+# How hard the engine thinks about a hint.
+HINT_NODES = 20_000
+
+# Piece values for spotting pieces that can be taken for free.
+_VALUES = {chess.PAWN: 1, chess.KNIGHT: 3, chess.BISHOP: 3, chess.ROOK: 5, chess.QUEEN: 9, chess.KING: 100}
 
 
 def _board_from(moves: list[str], fen: str | None = None) -> chess.Board:
@@ -55,6 +62,23 @@ def _pgn(board: chess.Board) -> str:
     return str(game)
 
 
+def hanging_pieces(board: chess.Board, color: chess.Color) -> list[str]:
+    """Squares of ``color``'s pieces that the other side can win: attacked and
+    either undefended or attacked by something cheaper. (A simple count that
+    ignores pins and exchanges further down the line; good enough to coach.)"""
+    squares = []
+    for square, piece in board.piece_map().items():
+        if piece.color != color or piece.piece_type == chess.KING:
+            continue
+        attackers = board.attackers(not color, square)
+        if not attackers:
+            continue
+        cheapest = min(_VALUES[board.piece_type_at(attacker)] for attacker in attackers)
+        if not board.attackers(color, square) or cheapest < _VALUES[piece.piece_type]:
+            squares.append(chess.square_name(square))
+    return sorted(squares)
+
+
 def game_state(moves: list[str], fen: str | None = None) -> dict:
     """Describe the position after ``moves`` (played from ``fen``, default the start position)."""
     board = _board_from(moves, fen)
@@ -78,6 +102,8 @@ def game_state(moves: list[str], fen: str | None = None) -> dict:
         "result": outcome.result() if outcome else None,
         "reason": outcome.termination.name.replace("_", " ").lower() if outcome else None,
         "pgn": _pgn(board),
+        "hanging": {"white": hanging_pieces(board, chess.WHITE), "black": hanging_pieces(board, chess.BLACK)},
+        "opening": None if fen else opening_name(board),
     }
 
 
@@ -222,3 +248,12 @@ def review_move(
         "accuracy": round(move_accuracy(before, after), 1),
         "verdict": verdict,
     }
+
+
+def suggest_move(moves: list[str], searcher: Searcher, fen: str | None = None, nodes: int = HINT_NODES) -> dict:
+    """A strong move for the side to move after ``moves``, for the hint button."""
+    board = _board_from(moves, fen)
+    if board.is_game_over(claim_draw=True):
+        raise ValueError("the game is already over")
+    result = searcher.search(board, nodes=nodes)
+    return {"move": result.best_move.uci(), "san": board.san(result.best_move)}

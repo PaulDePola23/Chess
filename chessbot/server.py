@@ -8,6 +8,7 @@ engine runs here in Python and the page talks to it through JSON endpoints:
     POST /api/state   {"moves": [...], "fen"?}                  -> game state
     POST /api/move    {"moves": [...], "fen"?, "level"?}        -> engine reply + new state
     POST /api/review  {"moves": [...], "fen"?, "ply": n}        -> review of moves[n]
+    POST /api/hint    {"moves": [...], "fen"?}                  -> a good move for the side to move
 
 Player stats go to the Supabase project named by the CHESSBOT_STATS_URL and
 CHESSBOT_STATS_KEY environment variables, or stay in the browser without them.
@@ -28,7 +29,7 @@ import chess.svg
 from . import __version__
 from .levels import DEFAULT_LEVEL, LEVELS
 from .search import Searcher
-from .webapi import engine_reply, game_state, review_move
+from .webapi import engine_reply, game_state, review_move, suggest_move
 
 STATIC_FILES = {
     "/": ("index.html", "text/html; charset=utf-8"),
@@ -139,6 +140,10 @@ class ChessBotHandler(BaseHTTPRequestHandler):
                 with self.server.engine_lock:
                     review = review_move(moves, request.get("ply"), self.server.searcher, fen)
                 self.send_json(HTTPStatus.OK, review)
+            elif self.path == "/api/hint":
+                with self.server.engine_lock:
+                    hint = suggest_move(moves, self.server.searcher, fen)
+                self.send_json(HTTPStatus.OK, hint)
             else:
                 self.send_json(HTTPStatus.NOT_FOUND, {"error": f"no such endpoint: {self.path}"})
         except (ValueError, TypeError) as error:

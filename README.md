@@ -44,8 +44,11 @@ setting until you choose):
   the seven levels, how it works, and credits.
 - **Play**: a board you can click or drag on (or type moves), seven opponent
   levels from Rookie (about 300) to Expert (about 1900), the engine's
-  evaluation as it thinks, and buttons to take back a move, resign, flip the
-  board and copy the game as PGN. When a game ends, a review lists your
+  evaluation as it thinks, the name of the opening, and buttons to take back
+  a move, resign, flip the board and copy the game as PGN. **Coach mode**
+  rings pieces that can be taken for free (yours in red, the bot's in green),
+  and there are three hints per game; games with hints or take-backs are
+  unrated. Moves slide into place, with optional sounds. When a game ends, a review lists your
   biggest mistakes with the move you should have played; click one to see
   it on the board.
 - **Learn**: eleven short lessons for newer players (piece values, opening
@@ -99,6 +102,10 @@ plus 400 × (wins − losses) ÷ games, the usual "performance rating" formula.
 Games where they took back a move don't count towards it.
 
 ### Shared stats
+
+If your table was created before hints and replays were added, also run
+[`supabase/upgrade-1.sql`](supabase/upgrade-1.sql); until then games still
+save, just without those details.
 
 The public site keeps everyone's games in a Supabase project, configured in
 `.github/workflows/pages.yml`. Without one (for example in a fork, or with
@@ -167,6 +174,7 @@ from the opening.
 | [`chessbot/evaluation.py`](chessbot/evaluation.py) | Scores a position: material plus piece-square tables, blended between middlegame and endgame by how much material is left. It also knows a bishop-pair bonus, which material counts are dead draws, and how to push a lone king to the edge to mate it. |
 | [`chessbot/search.py`](chessbot/search.py) | Chooses the move. Iterative-deepening alpha-beta (negamax with PVS), a transposition table, quiescence search, MVV-LVA / killer / history move ordering, null-move pruning, late-move reductions, check extensions, mate-distance scoring, and repetition and fifty-move draw detection. |
 | [`chessbot/uci.py`](chessbot/uci.py) | The UCI protocol. The search runs on its own thread so `stop` and `isready` get answered while it is thinking. |
+| [`chessbot/openings.py`](chessbot/openings.py) | Opening names, from the public-domain [Lichess chess-openings](https://github.com/lichess-org/chess-openings) data set (`scripts/build_openings.py` rebuilds `openings.json`). |
 | [`chessbot/levels.py`](chessbot/levels.py) | The seven play levels, their measured ratings, and how the weaker ones choose their moves. |
 | [`chessbot/play.py`](chessbot/play.py) | The terminal game. |
 | [`chessbot/webapi.py`](chessbot/webapi.py), [`chessbot/server.py`](chessbot/server.py), [`chessbot/web/`](chessbot/web) | The browser game. The page keeps the game as a list of moves and asks a backend for legal moves, notation, the engine's reply and the post-game review, so all chess logic stays in Python. Lessons live in `chessbot/web/lessons.json`; `tests/test_lessons.py` checks every puzzle with the engine. |

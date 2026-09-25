@@ -19,6 +19,9 @@
   const FILES = "abcdefgh";
   const GAME_KEY = "chessbot.game.v2";
   const NAME_KEY = "chessbot.name";
+  const COACH_KEY = "chessbot.coach";
+  const SOUND_KEY = "chessbot.sound";
+  const HINTS_PER_GAME = 3;
   const LESSONS_KEY = "chessbot.lessons.done";
   const PIECE_NAMES = { p: "pawn", n: "knight", b: "bishop", r: "rook", q: "queen", k: "king" };
   const VERDICT_GLYPHS = { blunder: "??", mistake: "?", inaccuracy: "?!" };
@@ -78,6 +81,7 @@
       state: (moves, fen) => post("/api/state", { moves, fen: fen || null }),
       move: (moves, level) => post("/api/move", { moves, level }),
       review: (moves, ply) => post("/api/review", { moves, ply }),
+      hint: (moves) => post("/api/hint", { moves }),
     };
   }
 
@@ -109,13 +113,24 @@
     // publishable keys (sb_publishable_...) must not.
     if (key.startsWith("eyJ")) headers.Authorization = `Bearer ${key}`;
 
+    // Columns added after the first version of supabase/games.sql. If the
+    // table doesn't have them yet, save the game without them.
+    const NEWER_COLUMNS = ["hints", "moves_uci"];
+
     async function insert(record, keepalive = false) {
-      const response = await fetch(`${url}/rest/v1/games`, {
-        method: "POST",
-        headers: { ...headers, Prefer: "return=minimal" },
-        body: JSON.stringify(record),
-        keepalive,
-      });
+      const post = (body) =>
+        fetch(`${url}/rest/v1/games`, {
+          method: "POST",
+          headers: { ...headers, Prefer: "return=minimal" },
+          body: JSON.stringify(body),
+          keepalive,
+        });
+      let response = await post(record);
+      if (response.status === 400 && /column/i.test(await response.text())) {
+        const older = { ...record };
+        for (const column of NEWER_COLUMNS) delete older[column];
+        response = await post(older);
+      }
       // 409: already saved (the same game id), which is fine.
       if (!response.ok && response.status !== 409) throw new Error(`Saving failed (${response.status}).`);
     }
@@ -218,24 +233,50 @@
 
   // ------------------------------------------------------------ board
 
+  const reducedMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
   // A clickable, draggable board. render() takes what to show:
   //   fen, orientation, last ("e2e4"), check ("e1"), marks ({e4: "good"}),
-  //   player (color that may move), legal (UCI moves), onMove(uci).
+  //   rings ({e4: "danger"}), player (color that may move), legal (UCI moves),
+  //   onMove(uci). A new last move slides into place.
   function createBoard(wrap) {
     const board = wrap.querySelector(".board");
     const promotion = wrap.querySelector(".promotion");
     const choices = promotion.querySelector(".promotion-choices");
-    let view = { fen: START_FEN, orientation: "white", legal: [], marks: {} };
+    let view = { fen: START_FEN, orientation: "white", legal: [], marks: {}, rings: {} };
     let selected = null;
     let drag = null;
+    let shown = { fen: null, last: null }; // what the last draw put on the board
+    let dropped = false; // the last move was dragged into place, so don't slide it
 
     const interactive = () => Boolean(view.onMove && view.player && view.legal && view.legal.length);
 
     function render(next) {
-      view = { ...view, marks: {}, last: null, check: null, onMove: null, player: null, legal: [], ...next };
+      view = { ...view, marks: {}, rings: {}, last: null, check: null, onMove: null, player: null, legal: [], ...next };
       if (!interactive()) selected = null;
       promotion.hidden = true;
       draw();
+    }
+
+    // Slide the piece that just moved from its old square (FLIP: draw it in
+    // place, offset it back to where it came from, then let it transition).
+    function slideLastMove() {
+      const from = board.querySelector(`[data-square="${view.last.slice(0, 2)}"]`);
+      const to = board.querySelector(`[data-square="${view.last.slice(2, 4)}"]`);
+      const piece = to && to.querySelector(".piece");
+      if (!from || !piece) return;
+      const a = from.getBoundingClientRect();
+      const b = to.getBoundingClientRect();
+      piece.style.transition = "none";
+      piece.style.transform = `translate(${a.left - b.left}px, ${a.top - b.top}px)`;
+      piece.style.zIndex = "5";
+      requestAnimationFrame(() =>
+        requestAnimationFrame(() => {
+          piece.style.transition = "transform 180ms ease-out";
+          piece.style.transform = "";
+          piece.addEventListener("transitionend", () => (piece.style.zIndex = ""), { once: true });
+        }),
+      );
     }
 
     function draw() {
@@ -258,6 +299,7 @@
           sq.dataset.square = name;
           if (view.last && (view.last.slice(0, 2) === name || view.last.slice(2, 4) === name)) sq.classList.add("last");
           if (view.marks[name]) sq.classList.add("mark-" + view.marks[name]);
+          if (view.rings[name]) sq.classList.add("ring-" + view.rings[name]);
           if (selected === name) sq.classList.add("selected");
           if (view.check === name) sq.classList.add("check");
           if (targets.has(name)) sq.classList.add("target", ...(piece ? ["capture"] : []));
@@ -271,6 +313,10 @@
           board.append(sq);
         }
       }
+      const moved = view.last && view.last !== shown.last && view.fen !== shown.fen && shown.fen !== null;
+      if (moved && !dropped && !reducedMotion) slideLastMove();
+      if (view.fen !== shown.fen) dropped = false;
+      shown = { fen: view.fen, last: view.last };
     }
 
     function squareAt(x, y) {
@@ -365,7 +411,9 @@
       drag = null;
       if (moved && !cancelled) {
         const to = squareAt(event.clientX, event.clientY);
+        dropped = true;
         if (to && to !== from && attempt(from, to)) return;
+        dropped = false;
       }
       // A tap keeps the piece selected so the next tap can choose its square.
       draw();
@@ -394,6 +442,8 @@
     level: LEVELS.some((l) => l.level === saved.level) ? saved.level : CONFIG.defaultLevel || LEVELS[0].level,
     flipped: Boolean(saved.flipped),
     takebacks: Number(saved.takebacks) || 0,
+    hints: Number(saved.hints) || 0,
+    hint: null, // {move, san} shown on the board until the next move
     resigned: Boolean(saved.resigned),
     recorded: Boolean(saved.recorded),
     state: null,
@@ -406,6 +456,8 @@
     loading: "Setting up the board…",
   };
   let playerName = storageGet(NAME_KEY, "") || "";
+  let coachMode = Boolean(storageGet(COACH_KEY, false));
+  let soundOn = Boolean(storageGet(SOUND_KEY, false));
 
   function saveGame() {
     storageSet(GAME_KEY, {
@@ -415,6 +467,7 @@
       level: game.level,
       flipped: game.flipped,
       takebacks: game.takebacks,
+      hints: game.hints,
       resigned: game.resigned,
       recorded: game.recorded,
     });
@@ -436,7 +489,7 @@
   const humanToMove = () =>
     Boolean(game.state) && !outcome().over && game.state.turn === game.human && !game.thinking && game.viewing === null;
   const humanPlies = () => game.moves.map((_, i) => i).filter((i) => (i % 2 === 0 ? "white" : "black") === game.human);
-  const rated = () => game.takebacks === 0;
+  const rated = () => game.takebacks === 0 && game.hints === 0;
 
   // ------------------------------------------------------------ play: rendering
 
@@ -452,11 +505,22 @@
       return;
     }
     const s = game.state;
+    // Coach mode rings the player's pieces that can be taken for free, and on
+    // the player's turn the bot's too.
+    const rings = {};
+    if (coachMode && s && !outcome().over) {
+      for (const square of s.hanging[game.human]) rings[square] = "danger";
+      if (humanToMove()) for (const square of s.hanging[other(game.human)]) rings[square] = "chance";
+    }
+    const marks = {};
+    if (game.hint && humanToMove()) marks[game.hint.move.slice(0, 2)] = marks[game.hint.move.slice(2, 4)] = "good";
     mainBoard.render({
       fen: s ? s.fen : START_FEN,
       orientation: whiteAtBottom() ? "white" : "black",
       last: s && s.last,
       check: s && s.check,
+      marks,
+      rings,
       player: humanToMove() ? game.human : null,
       legal: humanToMove() ? s.legal : [],
       onMove: playHumanMove,
@@ -492,7 +556,10 @@
       const depth = game.engineInfo && game.engineInfo.depth;
       return depth ? `The bot is thinking… depth ${depth}` : "The bot is thinking…";
     }
-    if (game.state.turn === game.human) return game.state.check ? "Your move. You're in check." : "Your move.";
+    if (game.state.turn === game.human) {
+      const base = game.state.check ? "Your move. You're in check." : "Your move.";
+      return game.hint ? `${base} Hint: try ${game.hint.san}.` : base;
+    }
     return "Waiting for the bot…";
   }
 
@@ -505,6 +572,12 @@
     $("time").textContent = info ? `${info.time.toFixed(1)}s` : "–";
     $("pv").textContent = info && info.pv ? info.pv : "";
     $("evalbar-fill").style.height = `${whiteShare(info)}%`;
+    const opening = game.state && game.state.opening;
+    $("opening-name").hidden = !opening;
+    if (opening) {
+      $("opening-name").textContent = "";
+      $("opening-name").append(el("b", { text: opening.name }), ` · ${opening.eco}`);
+    }
     $("evalbar").classList.toggle("white-top", !whiteAtBottom());
   }
 
@@ -532,6 +605,12 @@
     const o = outcome();
     const inProgress = Boolean(game.state) && !o.over && game.moves.length > 0;
     $("undo").disabled = !canUndo();
+    const hintsLeft = HINTS_PER_GAME - game.hints;
+    $("hint").disabled = !humanToMove() || hintsLeft <= 0 || Boolean(game.hint) || !backend.hint;
+    $("hint").textContent = hintsLeft > 0 ? `Hint (${hintsLeft} left)` : "No hints left";
+    $("coach-toggle").checked = coachMode;
+    $("sound-toggle").checked = soundOn;
+    $("coach-legend").hidden = !coachMode;
     $("resign").disabled = !game.state || o.over || game.moves.length === 0;
     $("copy-pgn").disabled = !game.state;
     const canType = humanToMove();
@@ -546,7 +625,10 @@
     let note;
     if (inProgress && changed) note = "Your new choices take effect when you start a new game.";
     else if (!playerName.trim()) note = "Add your name to save your games to the Stats page.";
-    else if (!rated()) note = "Unrated: you took back a move. It still counts on the Stats page, but not for your rating.";
+    else if (!rated()) {
+      const why = game.takebacks && game.hints ? "took back a move and used a hint" : game.takebacks ? "took back a move" : "used a hint";
+      note = `Unrated: you ${why}. It still counts on the Stats page, but not for your rating.`;
+    }
     else if (inProgress || !o.over) note = `Rated game against ${bot.name} (${bot.elo}).`;
     else note = game.recorded ? "Saved to the Stats page." : "Saving to the Stats page after the review…";
     $("game-note").textContent = note;
@@ -636,12 +718,50 @@
 
   // ------------------------------------------------------------ play: flow
 
+  // Short synthesized sounds, so there are no audio files to load.
+  let audio = null;
+  function playSound(kind) {
+    if (!soundOn) return;
+    try {
+      audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+      const notes = {
+        move: [[520, 0, 0.05, "triangle"]],
+        capture: [[200, 0, 0.09, "square"], [140, 0.02, 0.1, "triangle"]],
+        check: [[660, 0, 0.08, "sine"], [880, 0.08, 0.12, "sine"]],
+        end: [[523, 0, 0.18, "sine"], [659, 0.1, 0.18, "sine"], [784, 0.2, 0.3, "sine"]],
+      }[kind];
+      const now = audio.currentTime;
+      for (const [freq, start, length, type] of notes) {
+        const osc = audio.createOscillator();
+        const gain = audio.createGain();
+        osc.type = type;
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0.0001, now + start);
+        gain.gain.exponentialRampToValueAtTime(0.18, now + start + 0.01);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + start + length);
+        osc.connect(gain).connect(audio.destination);
+        osc.start(now + start);
+        osc.stop(now + start + length + 0.02);
+      }
+    } catch {
+      // No audio available; play silently.
+    }
+  }
+
+  function soundForLastMove(state) {
+    const san = state.san[state.san.length - 1] || "";
+    playSound(san.includes("#") ? "end" : san.includes("+") ? "check" : san.includes("x") ? "capture" : "move");
+  }
+
   async function setMoves(moves) {
     const token = game.token;
     const state = await backend.state(moves);
     if (token !== game.token) return false;
+    const advanced = moves.length > game.moves.length;
     game.moves = moves;
     game.state = state;
+    game.hint = null;
+    if (advanced) soundForLastMove(state);
     game.error = null;
     saveGame();
     render();
@@ -676,6 +796,8 @@
       game.moves = [...game.moves, reply.move];
       game.state = state;
       game.engineInfo = reply;
+      game.hint = null;
+      soundForLastMove(state);
       saveGame();
     } catch (error) {
       if (token === game.token) game.error = error.message || String(error);
@@ -703,6 +825,8 @@
     game.review = null;
     game.viewing = null;
     game.takebacks = 0;
+    game.hints = 0;
+    game.hint = null;
     game.resigned = false;
     game.recorded = false;
     game.human = document.querySelector('input[name="color"]:checked').value;
@@ -724,6 +848,7 @@
   // ------------------------------------------------------------ play: review and recording
 
   function finishGame() {
+    if (outcome().reason !== "checkmate") playSound("end");
     if (game.review || game.recorded) {
       render();
       return;
@@ -772,6 +897,12 @@
     render();
   }
 
+  function openingLabel() {
+    if (!game.state) return "";
+    if (game.state.opening) return game.state.opening.name;
+    return game.state.san.slice(0, 4).join(" ");
+  }
+
   function recordGame(reviewItems, { keepalive = false } = {}) {
     const o = outcome();
     game.recorded = true;
@@ -795,7 +926,9 @@
       mistakes: summary ? summary.counts.mistake : null,
       inaccuracies: summary ? summary.counts.inaccuracy : null,
       takebacks: game.takebacks,
-      opening: game.state ? game.state.san.slice(0, 4).join(" ") : "",
+      hints: game.hints,
+      opening: openingLabel().slice(0, 80),
+      moves_uci: game.moves.join(" ").slice(0, 10000),
     };
     stats.save(record, { keepalive }).catch(() => {
       // Supabase saves that fail are queued and retried when stats next load.
@@ -842,6 +975,34 @@
   });
 
   $("new-game").addEventListener("click", newGame);
+
+  $("coach-toggle").addEventListener("change", (event) => {
+    coachMode = event.target.checked;
+    storageSet(COACH_KEY, coachMode);
+    render();
+  });
+
+  $("sound-toggle").addEventListener("change", (event) => {
+    soundOn = event.target.checked;
+    storageSet(SOUND_KEY, soundOn);
+    if (soundOn) playSound("move"); // also unlocks audio, which needs a click
+  });
+
+  $("hint").addEventListener("click", async () => {
+    if (!humanToMove() || game.hints >= HINTS_PER_GAME || game.hint) return;
+    const token = game.token;
+    $("hint").disabled = true;
+    try {
+      const hint = await backend.hint(game.moves);
+      if (token !== game.token) return;
+      game.hints++;
+      game.hint = hint;
+      saveGame();
+    } catch (error) {
+      showError(error);
+    }
+    render();
+  });
 
   $("undo").addEventListener("click", async () => {
     if (!canUndo()) return;
@@ -1154,7 +1315,7 @@
     const draws = games.filter((g) => g.result === "draw").length;
     const losses = games.length - wins - draws;
     const reviewed = games.filter((g) => typeof g.accuracy === "number");
-    const ratedGames = games.filter((g) => !g.takebacks);
+    const ratedGames = games.filter((g) => !g.takebacks && !g.hints);
     const ratedWins = ratedGames.filter((g) => g.result === "win").length;
     const ratedLosses = ratedGames.filter((g) => g.result === "loss").length;
     const rating = ratedGames.length
@@ -1332,7 +1493,6 @@
   // ------------------------------------------------------------ home
 
   const showcaseBoard = createBoard($("showcase-wrap"));
-  const reducedMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const showcase = { game: null, index: 0, timer: null };
 
   function buildLadder() {

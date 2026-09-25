@@ -78,7 +78,7 @@
         </li>
         <li>
           <h3>Make your moves</h3>
-          <p>Drag a piece, or tap it and then tap where it should go. You can also type moves like <code>e4</code>, <code>Nf3</code> or <code>O-O</code>. The bot shows its evaluation and what it expects next while it thinks.</p>
+          <p>Drag a piece, or tap it and then tap where it should go. You can also type moves like <code>e4</code>, <code>Nf3</code> or <code>O-O</code>. New to chess? Turn on <b>Coach mode</b> and it rings any piece that can be taken for free.</p>
         </li>
         <li>
           <h3>Read the review</h3>
@@ -98,7 +98,7 @@
       <div class="features">
         <a class="feature" href="#play">
           <h3>Play</h3>
-          <p>Games against the bot at any of the seven levels, with take-backs, resigning, a flip-board button and PGN export for your games.</p>
+          <p>Games against the bot at any of the seven levels. Turn on coach mode to see which pieces can be taken for free, or ask for a hint. The page names the opening as you play.</p>
         </a>
         <a class="feature" href="#learn">
           <h3>Learn</h3>
@@ -172,6 +172,13 @@
           <div><dt>Time</dt><dd id="time">–</dd></div>
         </dl>
         <p class="pv" id="pv"></p>
+        <p class="opening-name" id="opening-name" hidden></p>
+        <div class="coach-row">
+          <label class="check"><input type="checkbox" id="coach-toggle"><span>Coach mode</span></label>
+          <label class="check"><input type="checkbox" id="sound-toggle"><span>Sounds</span></label>
+          <button type="button" id="hint">Hint</button>
+        </div>
+        <p class="coach-legend" id="coach-legend" hidden><span class="ring-key danger"></span>Your pieces that can be taken for free <span class="ring-key chance"></span>The bot's</p>
       </div>
 
       <form class="move-form" id="move-form" autocomplete="off">
@@ -347,7 +354,7 @@
         </table>
       </div>
     </div>
-    <p class="stats-footnote">Ratings are estimated from results against the bot's levels: the average rating of the levels you played, plus 400 × (wins − losses) ÷ games. Games where you took back a move don't count. A <span class="provisional">?</span> means fewer than 5 rated games.</p>
+    <p class="stats-footnote">Ratings are estimated from results against the bot's levels: the average rating of the levels you played, plus 400 × (wins − losses) ÷ games. Games where you took back a move or used a hint don't count. A <span class="provisional">?</span> means fewer than 5 rated games.</p>
   </main>
 
   <footer class="footer">

@@ -21,7 +21,15 @@ from .server import config_js, pieces_js
 
 # The modules the engine needs in the browser. chess.pgn imports chess.engine
 # and chess.svg, so those come along too.
-CHESSBOT_MODULES = ["__init__.py", "evaluation.py", "search.py", "levels.py", "webapi.py"]
+CHESSBOT_MODULES = [
+    "__init__.py",
+    "evaluation.py",
+    "search.py",
+    "levels.py",
+    "openings.py",
+    "openings.json",
+    "webapi.py",
+]
 CHESS_MODULES = ["__init__.py", "pgn.py", "engine.py", "svg.py"]
 
 SERVER_FOOTER = "<p>The engine is <code>chessbot/search.py</code> and <code>chessbot/evaluation.py</code>."
