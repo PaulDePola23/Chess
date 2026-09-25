@@ -478,8 +478,10 @@ button, input, textarea { font: inherit; color: inherit; }
 }
 .level-picker { margin: 0; padding: 0; border: 0; min-width: 0; }
 .level-picker legend { margin-bottom: 6px; padding: 0; }
-.levels { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
-.levels label { position: relative; }
+/* Rows of four beginner levels, three stronger ones, then Summer, Titan and Pinky. */
+.levels { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 6px; }
+.levels label { position: relative; grid-column: span 3; }
+.levels label:nth-child(n + 5) { grid-column: span 4; }
 .levels input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
 .levels span {
   display: flex;
@@ -836,14 +838,14 @@ button.primary:hover:not(:disabled) { border-color: var(--ink); }
 
 .ladder {
   display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 10px;
   margin: 0;
   padding: 0;
   list-style: none;
 }
-@media (max-width: 1000px) {
-  .ladder { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 800px) {
+  .ladder { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 .ladder li {
   display: flex;
@@ -976,6 +978,7 @@ button.primary:hover:not(:disabled) { border-color: var(--ink); }
 .badge.earned { border-color: var(--accent); }
 .badge.earned .badge-icon { color: var(--accent); }
 .badge.locked { opacity: 0.55; }
+.badge.locked .badge-icon { filter: grayscale(1); }
 
 /* Game viewer */
 #stats-game { display: flex; flex-direction: column; gap: 14px; }

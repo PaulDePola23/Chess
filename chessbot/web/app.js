@@ -603,9 +603,11 @@
       ["player-bottom", bottom],
     ]) {
       const node = $(id);
+      // Titan and Pinky are Stockfish, so they play under their own names.
       node.querySelector(".player-name").textContent =
-        color === game.human ? playerName || "You" : "Paul's Chess Bot";
-      node.querySelector(".player-side").textContent = color === game.human ? color : `${color} · ${bot.name} ${bot.elo}`;
+        color === game.human ? playerName || "You" : bot.stockfish ? bot.name : "Paul's Chess Bot";
+      node.querySelector(".player-side").textContent =
+        color === game.human ? color : `${color} · ${bot.stockfish ? "Stockfish" : bot.name} ${bot.elo}`;
       node.classList.toggle("to-move", turn === color);
     }
   }
@@ -620,6 +622,7 @@
       return `Draw by ${o.reason}.`;
     }
     if (game.thinking) {
+      if (levelInfo(game.level).stockfish && !stockfishLoaded) return "Loading Stockfish (about 7 MB, only the first time)…";
       const depth = game.engineInfo && game.engineInfo.depth;
       return depth ? `The bot is thinking… depth ${depth}` : "The bot is thinking…";
     }
@@ -856,6 +859,112 @@
     }
   }
 
+  // ------------------------------------------------------------ play: stockfish
+
+  // Titan and Pinky are Stockfish, held to their rating with UCI_Elo. It runs
+  // in a Web Worker with Stockfish.js (GPL-3.0), downloaded from jsDelivr
+  // (about 7 MB) the first time one of them plays; the service worker keeps it.
+  const STOCKFISH_JS = "https://cdn.jsdelivr.net/npm/stockfish@18.0.8/bin/stockfish-18-lite-single.js";
+  const STOCKFISH_MOVE_MS = 1000;
+  let stockfishEngine = null;
+  let stockfishLoaded = false;
+
+  function startStockfish() {
+    const listeners = new Set();
+    let failure = null;
+    // A same-origin worker that loads the engine; the fragment tells Stockfish.js where its .wasm is.
+    const loader = new Blob([`importScripts(${JSON.stringify(STOCKFISH_JS)});`], { type: "text/javascript" });
+    const wasm = STOCKFISH_JS.replace(/\.js$/, ".wasm");
+    const worker = new Worker(`${URL.createObjectURL(loader)}#${encodeURIComponent(wasm)}`);
+    worker.onmessage = (event) => {
+      for (const listener of [...listeners]) listener(String(event.data));
+    };
+    worker.onerror = (event) => {
+      failure = new Error(`Stockfish couldn't start (${event.message || "no connection?"}).`);
+      for (const listener of [...listeners]) listener(null);
+    };
+    const send = (command) => worker.postMessage(command);
+    // Resolves with the first line that passes `test`.
+    const next = (test, ms) =>
+      new Promise((resolve, reject) => {
+        const finish = (settle, value) => {
+          clearTimeout(timer);
+          listeners.delete(listener);
+          settle(value);
+        };
+        const listener = (line) => {
+          if (line === null) finish(reject, failure);
+          else if (test(line)) finish(resolve, line);
+        };
+        const timer = setTimeout(() => finish(reject, new Error("Stockfish stopped answering.")), ms);
+        listeners.add(listener);
+      });
+    const engine = { send, next, listeners, busy: null };
+    engine.ready = (async () => {
+      send("uci");
+      await next((line) => line === "uciok", 120000);
+      send("setoption name UCI_LimitStrength value true");
+      send("isready");
+      await next((line) => line === "readyok", 60000);
+    })();
+    engine.ready.catch(() => {
+      if (stockfishEngine === engine) stockfishEngine = null;
+      worker.terminate();
+    });
+    return engine;
+  }
+
+  // Stockfish's move after `moves`, at UCI_Elo `elo`, with its search info from White's side.
+  async function stockfishMove(moves, elo, onProgress) {
+    if (typeof WebAssembly !== "object") throw new Error("This browser can't run Stockfish (it needs WebAssembly).");
+    stockfishEngine = stockfishEngine || startStockfish();
+    const engine = stockfishEngine;
+    await engine.ready;
+    stockfishLoaded = true;
+    // A search for an abandoned game may still be running.
+    if (engine.busy) {
+      engine.send("stop");
+      await engine.busy.catch(() => {});
+    }
+    const sign = moves.length % 2 === 0 ? 1 : -1; // Stockfish scores from the side to move
+    const started = performance.now();
+    let info = { depth: 0, score: 0, mate: null, nodes: 0 };
+    const progress = (line) => {
+      if (!line || !line.startsWith("info ") || / multipv [2-9]/.test(line)) return;
+      const depth = / depth (\d+)/.exec(line);
+      const cp = / score cp (-?\d+)/.exec(line);
+      const mate = / score mate (-?\d+)/.exec(line);
+      if (!depth || !(cp || mate)) return;
+      const nodes = / nodes (\d+)/.exec(line);
+      info = {
+        depth: Number(depth[1]),
+        score: cp ? sign * Number(cp[1]) : null,
+        mate: mate ? sign * Number(mate[1]) : null,
+        nodes: nodes ? Number(nodes[1]) : 0,
+      };
+      if (onProgress) onProgress({ ...info, time: (performance.now() - started) / 1000, pv: "" });
+    };
+    engine.listeners.add(progress);
+    try {
+      engine.send(`setoption name UCI_Elo value ${elo}`);
+      engine.send(`position startpos${moves.length ? ` moves ${moves.join(" ")}` : ""}`);
+      engine.busy = engine.next((line) => line.startsWith("bestmove"), 60000);
+      engine.send(`go movetime ${STOCKFISH_MOVE_MS}`);
+      const line = await engine.busy;
+      return { ...info, move: line.split(" ")[1], time: (performance.now() - started) / 1000, pv: "" };
+    } finally {
+      engine.busy = null;
+      engine.listeners.delete(progress);
+    }
+  }
+
+  // The same {reply, state} as backend.move, for a Stockfish level.
+  async function stockfishReply(moves, elo, onProgress) {
+    const found = await stockfishMove(moves, elo, onProgress);
+    const state = await backend.state([...moves, found.move]);
+    return { reply: { ...found, san: state.san[state.san.length - 1] }, state };
+  }
+
   async function engineTurn() {
     const s = game.state;
     if (!s || outcome().over || s.turn === game.human || game.thinking) return;
@@ -869,7 +978,10 @@
         game.engineInfo = info;
         renderStatus();
       };
-      const { reply, state } = await backend.move(game.moves, game.level, onProgress);
+      const level = levelInfo(game.level);
+      const { reply, state } = level.stockfish
+        ? await stockfishReply(game.moves, level.stockfish, onProgress)
+        : await backend.move(game.moves, game.level, onProgress);
       if (token !== game.token) return;
       game.moves = [...game.moves, reply.move];
       game.state = state;
@@ -1761,11 +1873,17 @@
     { icon: "♞", name: "Explorer", desc: "Win at three different levels.",
       earned: (gs) => new Set(gs.filter((g) => g.result === "win").map((g) => g.level)).size >= 3 },
     { icon: "♜", name: "Marathon", desc: "Play a game of 60 moves or more.", earned: (gs) => gs.some((g) => g.moves >= 60) },
-    { icon: "♕", name: "Club champion", desc: "Beat Club (1150) or a stronger level.",
-      earned: (gs) => gs.some((g) => g.result === "win" && g.bot_elo >= 1150) },
-    { icon: "♔", name: "Giant slayer", desc: "Beat Strong (1650) or Expert.",
-      earned: (gs) => gs.some((g) => g.result === "win" && g.bot_elo >= 1650) },
+    { icon: "♕", name: "Club champion", desc: `Beat ${levelInfo(4).name} or a stronger level.`, earned: beatLevel(4) },
+    { icon: "♔", name: "Giant slayer", desc: `Beat ${levelInfo(6).name} or a stronger level.`, earned: beatLevel(6) },
+    // The top three levels are named after Paul's animals.
+    { icon: "🐕", name: "Summer's friend", desc: "Beat Summer.", earned: beatLevel(8) },
+    { icon: "🦴", name: "Titan tamer", desc: "Beat Titan.", earned: beatLevel(9) },
+    { icon: "🐈", name: "Top cat", desc: "Beat Pinky.", earned: beatLevel(10) },
   ];
+
+  function beatLevel(number) {
+    return (games) => games.some((g) => g.result === "win" && g.level >= number);
+  }
 
   function longestStreak(games) {
     let best = 0;

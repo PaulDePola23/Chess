@@ -48,6 +48,9 @@ PAIRINGS = [
     ("L6", "SF1600"),
     ("L7", "SF1600"),
     ("L7", "SF1900"),
+    ("L7", "L8"),
+    ("L8", "SF1900"),
+    ("L8", "SF2200"),
 ]
 
 # Short, common openings so that deterministic players don't repeat one game.
@@ -70,15 +73,15 @@ STOCKFISH_MOVE_TIME = 0.05
 class Player:
     def __init__(self, name: str, stockfish: str, seed: int):
         self.name = name
-        if name.startswith("SF"):
+        level = get_level(int(name[1:])) if name.startswith("L") else None
+        # Stockfish at a UCI_Elo setting: an anchor, or one of the Stockfish play levels.
+        stockfish_elo = int(name[2:]) if name.startswith("SF") else level and level.stockfish_elo
+        if stockfish_elo:
             self.engine = chess.engine.SimpleEngine.popen_uci(stockfish)
-            self.engine.configure({"UCI_LimitStrength": True, "UCI_Elo": int(name[2:]), "Threads": 1})
+            self.engine.configure({"UCI_LimitStrength": True, "UCI_Elo": stockfish_elo, "Threads": 1})
         else:
             self.engine = None
-            if name.startswith("N"):
-                self.level = Level(0, name, 0, nodes=int(name[1:]))
-            else:
-                self.level = get_level(int(name[1:]))
+            self.level = level or Level(0, name, 0, nodes=int(name[1:]))
             self.searcher = Searcher()
             self.rng = random.Random(seed)
 

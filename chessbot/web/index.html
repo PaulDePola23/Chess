@@ -11,7 +11,7 @@
 <meta name="theme-color" content="#e7ebee" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0f1418" media="(prefers-color-scheme: dark)">
 <meta name="apple-mobile-web-app-title" content="Paul's Chess">
-<meta name="description" content="Play chess against a bot at seven levels, solve rated puzzles, learn the basics and see how you rank.">
+<meta name="description" content="Play chess against a bot at ten levels, solve rated puzzles, learn the basics and see how you rank.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
@@ -54,7 +54,7 @@
       <div class="hero-text">
         <p class="eyebrow">A chess bot written in Python</p>
         <h1 class="hero-title">Play at your level. Learn from every&nbsp;game.</h1>
-        <p class="hero-lede">Seven opponents from about 300 to 1900, a review of your biggest mistakes after every game, rated puzzles, short lessons, and a shared leaderboard. It's free, runs in your browser, and needs no sign-up.</p>
+        <p class="hero-lede">Ten opponents from about 300 to 2700, a review of your biggest mistakes after every game, rated puzzles, short lessons, and a shared leaderboard. It's free, runs in your browser, and needs no sign-up.</p>
         <div class="hero-actions">
           <a class="button primary" href="#play">Play now</a>
           <a class="button" href="#puzzles">Try a puzzle</a>
@@ -90,7 +90,7 @@
         </li>
         <li>
           <h3>Pick an opponent</h3>
-          <p>Choose one of the seven levels and a color, then press <b>New game</b>. Start low and move up when you begin winning.</p>
+          <p>Choose one of the ten levels and a color, then press <b>New game</b>. Start low and move up when you begin winning.</p>
         </li>
         <li>
           <h3>Make your moves</h3>
@@ -104,8 +104,8 @@
     </section>
 
     <section class="home-section" aria-labelledby="levels-title">
-      <h2 id="levels-title">Seven opponents</h2>
-      <p class="section-lede">Each level's rating was measured by playing it against Stockfish at fixed strengths, so treat the numbers as rough guides.</p>
+      <h2 id="levels-title">Ten opponents</h2>
+      <p class="section-lede">Each level's rating was measured by playing it against Stockfish at fixed strengths, so treat the numbers as rough guides. The top three are named after Paul's animals back home: Summer is the bot at full stretch, and Titan and Pinky are Stockfish itself, held to their ratings.</p>
       <ol class="ladder" id="home-levels"></ol>
     </section>
 
@@ -114,7 +114,7 @@
       <div class="features">
         <a class="feature" href="#play">
           <h3>Play</h3>
-          <p>Games against the bot at any of the seven levels. Turn on coach mode to see which pieces can be taken for free, or ask for a hint. The page names the opening as you play.</p>
+          <p>Games against the bot at any of the ten levels. Turn on coach mode to see which pieces can be taken for free, or ask for a hint. The page names the opening as you play.</p>
         </a>
         <a class="feature" href="#puzzles">
           <h3>Puzzles</h3>
@@ -151,6 +151,7 @@
         <div><dt>Chess rules</dt><dd><a href="https://github.com/niklasf/python-chess">python-chess</a> by Niklas Fiekas</dd></div>
         <div><dt>Pieces</dt><dd>Colin M.L. Burnett's set, as shipped with python-chess</dd></div>
         <div><dt>Python in the browser</dt><dd><a href="https://pyodide.org">Pyodide</a></dd></div>
+        <div><dt>Titan and Pinky</dt><dd><a href="https://stockfishchess.org">Stockfish</a>, in the browser with Nathan Rugg's <a href="https://github.com/nmrugg/stockfish.js">Stockfish.js</a> (GPL-3.0)</dd></div>
         <div><dt>Rating benchmark</dt><dd><a href="https://stockfishchess.org">Stockfish</a></dd></div>
       </dl>
     </section>

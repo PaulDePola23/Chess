@@ -41,9 +41,9 @@ The page has six tabs, plus a light/dark switch (it follows your device's
 setting until you choose):
 
 - **Home**: a title page with a replay of Morphy's Opera Game, how to play,
-  the seven levels, how it works, and credits.
-- **Play**: a board you can click or drag on (or type moves), seven opponent
-  levels from Rookie (about 300) to Expert (about 1900), the engine's
+  the ten levels, how it works, and credits.
+- **Play**: a board you can click or drag on (or type moves), ten opponent
+  levels from Rookie (about 300) to Pinky (2700), the engine's
   evaluation as it thinks, the name of the opening, and buttons to take back
   a move, resign, flip the board and copy the game as PGN. **Coach mode**
   rings pieces that can be taken for free (yours in red, the bot's in green),
@@ -95,6 +95,17 @@ private repo needs a paid GitHub plan), then re-run the workflow.
 | Skilled | ~1400 | full search, 1,500 positions a move |
 | Strong | ~1650 | full search, 12,000 positions a move |
 | Expert | ~1900 | full search, 40,000 positions a move |
+| Summer | ~2000 | full search, 80,000 positions a move (about 10 seconds in the browser) |
+| Titan | 2500 | Stockfish with `UCI_Elo` 2500, a second a move |
+| Pinky | 2700 | Stockfish with `UCI_Elo` 2700, a second a move |
+
+The top three are named after Paul's animals back home: Summer and Titan
+are dogs, Pinky is a cat. Titan and Pinky are Stockfish itself, which is
+far beyond what a Python engine can reach: the page runs
+[Stockfish.js](https://github.com/nmrugg/stockfish.js) (GPL-3.0, the "lite"
+single-threaded build, about 7 MB) in a Web Worker, downloaded from jsDelivr
+the first time one of them plays, and holds it to their rating with
+Stockfish's own `UCI_LimitStrength`. Club and up open from the opening book.
 
 The lower levels score the reasonable moves with a shallow search and pick
 one at random, favouring the better ones. The upper levels use the full
@@ -218,7 +229,7 @@ from the opening.
 | [`chessbot/uci.py`](chessbot/uci.py) | The UCI protocol. The search runs on its own thread so `stop` and `isready` get answered while it is thinking. |
 | [`chessbot/openings.py`](chessbot/openings.py) | Opening names, from the public-domain [Lichess chess-openings](https://github.com/lichess-org/chess-openings) data set (`scripts/build_openings.py` rebuilds `openings.json`). |
 | [`chessbot/book.py`](chessbot/book.py) | The opening book the Club level and up play from: the moves of the named Lichess opening lines, kept only where Stockfish rates them within a third of a pawn of its best move (`scripts/build_book.py` rebuilds `book.json`). Main lines come up more often than sidelines. |
-| [`chessbot/levels.py`](chessbot/levels.py) | The seven play levels, their measured ratings, and how the weaker ones choose their moves. |
+| [`chessbot/levels.py`](chessbot/levels.py) | The ten play levels, their measured ratings, and how the weaker ones choose their moves. |
 | [`chessbot/play.py`](chessbot/play.py) | The terminal game. |
 | [`chessbot/webapi.py`](chessbot/webapi.py), [`chessbot/server.py`](chessbot/server.py), [`chessbot/web/`](chessbot/web) | The browser game. The page keeps the game as a list of moves and asks a backend for legal moves, notation, the engine's reply and the post-game review, so all chess logic stays in Python. Lessons live in `chessbot/web/lessons.json`; `tests/test_lessons.py` checks every puzzle with the engine. |
 | [`chessbot/site.py`](chessbot/site.py), [`chessbot/web/pyodide-backend.js`](chessbot/web/pyodide-backend.js) | The static site: the same page, answered by the engine running in a Web Worker with Pyodide instead of by the server. |

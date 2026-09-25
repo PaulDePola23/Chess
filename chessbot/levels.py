@@ -49,10 +49,14 @@ class Level:
     blunder_rate: float = 0.0  # lower levels: chance of a random legal move
     nodes: int | None = None  # upper levels: search node budget
     book: bool = False  # play well-known opening moves from the opening book
+    stockfish_elo: int | None = None  # the top levels: Stockfish held to this rating (played in the browser)
     description: str = ""  # how it plays, for players choosing a level
 
     def as_dict(self) -> dict:
-        return {"level": self.number, "name": self.name, "elo": self.elo, "description": self.description}
+        info = {"level": self.number, "name": self.name, "elo": self.elo, "description": self.description}
+        if self.stockfish_elo is not None:
+            info["stockfish"] = self.stockfish_elo
+        return info
 
 
 LEVELS = [
@@ -94,7 +98,30 @@ LEVELS = [
     ),
     Level(5, "Skilled", 1400, nodes=1_500, book=True, description="Looks a few moves ahead and punishes loose pieces."),
     Level(6, "Strong", 1650, nodes=12_000, book=True, description="Sees most tactics. You'll need a real advantage."),
-    Level(7, "Expert", 1900, nodes=40_000, book=True, description="The full engine. Hard to beat."),
+    Level(7, "Expert", 1900, nodes=40_000, book=True, description="The full engine at a brisk pace. Hard to beat."),
+    # The last three are named after Paul's animals back home.
+    Level(
+        8,
+        "Summer",
+        2000,
+        nodes=80_000,
+        book=True,
+        description="Named after Paul's dog Summer. The full engine, thinking twice as long.",
+    ),
+    Level(
+        9,
+        "Titan",
+        2500,
+        stockfish_elo=2500,
+        description="Named after Paul's dog Titan. Stockfish, held to master strength.",
+    ),
+    Level(
+        10,
+        "Pinky",
+        2700,
+        stockfish_elo=2700,
+        description="Named after Paul's cat Pinky. Stockfish at grandmaster strength. Good luck.",
+    ),
 ]
 DEFAULT_LEVEL = 3
 
@@ -114,6 +141,8 @@ def choose_move(
     on_iteration=None,
 ) -> SearchResult:
     """Pick a move for ``board`` at ``level``. The result's score is the chosen move's."""
+    if level.stockfish_elo is not None:
+        raise ValueError(f"{level.name} is played by Stockfish, which the web page runs itself")
     rng = rng or random.Random()
     if level.book:
         found = book_move(board, rng)
