@@ -1,6 +1,6 @@
-name: Inspect stats (temporary)
+name: Inspect (temporary)
 
-# A one-off, read-only look at the latest rows, for debugging. Removed after use.
+# A one-off, read-only check for debugging. Removed after use.
 on: workflow_dispatch
 
 permissions:
@@ -9,16 +9,17 @@ permissions:
 jobs:
   show:
     runs-on: ubuntu-latest
-    env:
-      STATS_URL: ${{ vars.CHESSBOT_STATS_URL || 'https://vpqsrrhoqhoyjmndnltc.supabase.co' }}
-      STATS_KEY: ${{ vars.CHESSBOT_STATS_KEY || 'sb_publishable_ORnp8JSnyWblH5jt_0-uqw_h7Hx-mhx' }}
     steps:
-      - name: Latest puzzle attempts and games
+      - name: What the CDN returns for the Stockfish files
         run: |
-          for query in \
-            "puzzle_attempts?select=player,puzzle_id,solved,rating_after,played_at&order=played_at.desc&limit=15" \
-            "games?select=player,level,result,played_at&order=played_at.desc&limit=10"; do
-            echo "== $query"
-            curl --fail --silent --show-error -H "apikey: $STATS_KEY" "$STATS_URL/rest/v1/$query"
+          for url in \
+            https://cdn.jsdelivr.net/npm/stockfish@18.0.8/bin/stockfish-18-lite-single.js \
+            https://cdn.jsdelivr.net/npm/stockfish@18.0.8/bin/stockfish-18-lite-single.wasm \
+            https://cdn.jsdelivr.net/npm/pyodide@314.0.7/pyodide.mjs \
+            https://github.com/nmrugg/stockfish.js/releases/download/v18.0.0/stockfish-18-lite-single.js \
+            https://github.com/nmrugg/stockfish.js/releases/download/v18.0.0/stockfish-18-lite-single.wasm; do
+            echo "== $url"
+            curl --silent --show-error --location --output /tmp/body --write-out "status %{http_code}, %{size_download} bytes, %{content_type}\n" "$url"
+            head -c 300 /tmp/body | tr -cd '[:print:]\n' | head -3
             echo
           done
