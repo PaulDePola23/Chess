@@ -38,8 +38,8 @@ chessbot serve --open    # or open http://localhost:8000 yourself
 
 The page has three tabs:
 
-- **Play**: a board you can click or drag on (or type moves), six opponent
-  levels from Beginner (about 700) to Expert (about 1700), the engine's
+- **Play**: a board you can click or drag on (or type moves), seven opponent
+  levels from Rookie (about 300) to Expert (about 1900), the engine's
   evaluation as it thinks, and buttons to take back a move, resign, flip the
   board and copy the game as PGN. When a game ends, a review lists your
   biggest mistakes with the move you should have played; click one to see
@@ -70,15 +70,25 @@ private repo needs a paid GitHub plan), then re-run the workflow.
 
 ### Levels and ratings
 
-The four lower levels score the reasonable moves with a shallow search and
-pick one at random, favouring the better ones; the two lowest also play a
-random move now and then, which is how they hang pieces the way beginners
-do. The two upper levels use the full search with a fixed node budget, so
-they play equally well in the browser and natively. The Elo shown for each
-level was measured with `scripts/calibrate_levels.py`, which plays the levels
-against each other and against Stockfish 16 at fixed `UCI_Elo` settings. The
-numbers are rough (20 games per pairing) and on Stockfish's rating scale,
-which doesn't match any online site exactly.
+| Level | Rating | How it plays |
+| ----- | ------ | ------------ |
+| Rookie | ~300 | 1-ply search, lots of randomness, a random move 20% of the time |
+| Novice | ~500 | 1-ply search, less randomness, a random move 8% of the time |
+| Casual | ~900 | 2-ply search, some randomness, a random move 3% of the time |
+| Club | ~1150 | 2-ply search, a little randomness |
+| Skilled | ~1400 | full search, 1,500 positions a move |
+| Strong | ~1650 | full search, 12,000 positions a move |
+| Expert | ~1900 | full search, 40,000 positions a move |
+
+The lower levels score the reasonable moves with a shallow search and pick
+one at random, favouring the better ones. The upper levels use the full
+search with a fixed node budget, so they play equally well in the browser
+and natively. The ratings were measured with `scripts/calibrate_levels.py`,
+which plays the levels against each other and against Stockfish 16 at fixed
+`UCI_Elo` settings (20 games per pairing; the full results are in
+`chessbot/levels.py`). They're rough, on Stockfish's rating scale (which
+doesn't match any online site exactly), and the ones below Stockfish's
+minimum of 1320 are extrapolated from games between levels.
 
 A player's estimated rating is the average rating of the levels they played
 plus 400 × (wins − losses) ÷ games, the usual "performance rating" formula.
@@ -153,7 +163,7 @@ from the opening.
 | [`chessbot/evaluation.py`](chessbot/evaluation.py) | Scores a position: material plus piece-square tables, blended between middlegame and endgame by how much material is left. It also knows a bishop-pair bonus, which material counts are dead draws, and how to push a lone king to the edge to mate it. |
 | [`chessbot/search.py`](chessbot/search.py) | Chooses the move. Iterative-deepening alpha-beta (negamax with PVS), a transposition table, quiescence search, MVV-LVA / killer / history move ordering, null-move pruning, late-move reductions, check extensions, mate-distance scoring, and repetition and fifty-move draw detection. |
 | [`chessbot/uci.py`](chessbot/uci.py) | The UCI protocol. The search runs on its own thread so `stop` and `isready` get answered while it is thinking. |
-| [`chessbot/levels.py`](chessbot/levels.py) | The six play levels and how the weaker ones choose their moves. |
+| [`chessbot/levels.py`](chessbot/levels.py) | The seven play levels, their measured ratings, and how the weaker ones choose their moves. |
 | [`chessbot/play.py`](chessbot/play.py) | The terminal game. |
 | [`chessbot/webapi.py`](chessbot/webapi.py), [`chessbot/server.py`](chessbot/server.py), [`chessbot/web/`](chessbot/web) | The browser game. The page keeps the game as a list of moves and asks a backend for legal moves, notation, the engine's reply and the post-game review, so all chess logic stays in Python. Lessons live in `chessbot/web/lessons.json`; `tests/test_lessons.py` checks every puzzle with the engine. |
 | [`chessbot/site.py`](chessbot/site.py), [`chessbot/web/pyodide-backend.js`](chessbot/web/pyodide-backend.js) | The static site: the same page, answered by the engine running in a Web Worker with Pyodide instead of by the server. |

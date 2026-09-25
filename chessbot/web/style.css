@@ -422,20 +422,28 @@ button, input, textarea { font: inherit; color: inherit; }
 }
 .level-picker { margin: 0; padding: 0; border: 0; min-width: 0; }
 .level-picker legend { margin-bottom: 6px; padding: 0; }
-.levels { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.levels { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
 .levels label { position: relative; }
 .levels input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
 .levels span {
   display: flex;
   flex-direction: column;
   gap: 1px;
-  padding: 6px 8px;
+  padding: 6px 7px;
   border: 1px solid var(--line);
   border-radius: 6px;
   background: var(--bg);
   cursor: pointer;
 }
-.levels b { font-size: 13px; font-weight: 650; }
+.levels b {
+  font-size: 13px;
+  font-weight: 650;
+  font-stretch: 85%;
+  font-variation-settings: "wdth" 85;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .levels small { font: 500 12px/1.2 var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
 .levels input:checked + span { background: var(--ink); color: var(--surface); border-color: var(--ink); }
 .levels input:checked + span small { color: inherit; opacity: 0.8; }

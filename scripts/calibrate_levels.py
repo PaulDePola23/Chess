@@ -8,6 +8,13 @@ settings as fixed anchors, so the numbers are on Stockfish's rating scale.
     python scripts/calibrate_levels.py --games 20 --workers 4
 
 Expect roughly +-100 Elo of noise with 20 games per pairing.
+
+Players are named L<level> (a play level), SF<elo> (Stockfish at that
+UCI_Elo) or N<nodes> (the full search with that node budget, for trying out
+a new level). To place one new player among levels that are already
+measured, give its pairings and pin the others:
+
+    python scripts/calibrate_levels.py --pairings N3000:L4,N3000:SF1320 --fixed L4=1137
 """
 
 from __future__ import annotations
@@ -24,7 +31,7 @@ from multiprocessing import Pool
 import chess
 import chess.engine
 
-from chessbot.levels import LEVELS, choose_move, get_level
+from chessbot.levels import LEVELS, Level, choose_move, get_level
 from chessbot.search import Searcher
 
 PAIRINGS = [
@@ -33,12 +40,14 @@ PAIRINGS = [
     ("L3", "L4"),
     ("L4", "L5"),
     ("L5", "L6"),
+    ("L6", "L7"),
     ("L3", "SF1320"),
     ("L4", "SF1320"),
     ("L5", "SF1320"),
-    ("L5", "SF1600"),
+    ("L6", "SF1320"),
     ("L6", "SF1600"),
-    ("L6", "SF1900"),
+    ("L7", "SF1600"),
+    ("L7", "SF1900"),
 ]
 
 # Short, common openings so that deterministic players don't repeat one game.
@@ -66,7 +75,10 @@ class Player:
             self.engine.configure({"UCI_LimitStrength": True, "UCI_Elo": int(name[2:]), "Threads": 1})
         else:
             self.engine = None
-            self.level = get_level(int(name[1:]))
+            if name.startswith("N"):
+                self.level = Level(0, name, 0, nodes=int(name[1:]))
+            else:
+                self.level = get_level(int(name[1:]))
             self.searcher = Searcher()
             self.rng = random.Random(seed)
 
@@ -131,10 +143,14 @@ def main() -> int:
     parser.add_argument("--games", type=int, default=20, help="games per pairing (default 20)")
     parser.add_argument("--workers", type=int, default=4, help="games played in parallel (default 4)")
     parser.add_argument("--stockfish", default=shutil.which("stockfish") or "/usr/games/stockfish")
+    parser.add_argument("--pairings", help="comma-separated A:B pairs to play instead of the default set")
+    parser.add_argument("--fixed", help="comma-separated NAME=ELO ratings to hold fixed, like SF anchors")
     args = parser.parse_args()
+    pairings = [tuple(pair.split(":")) for pair in args.pairings.split(",")] if args.pairings else PAIRINGS
+    fixed = {k: float(v) for k, v in (item.split("=") for item in args.fixed.split(","))} if args.fixed else {}
 
     jobs = []
-    for (a, b), index in itertools.product(PAIRINGS, range(args.games)):
+    for (a, b), index in itertools.product(pairings, range(args.games)):
         white, black = (a, b) if index % 2 == 0 else (b, a)
         jobs.append((white, black, index, args.stockfish))
     with Pool(args.workers) as pool:
@@ -146,18 +162,20 @@ def main() -> int:
             totals[key][0] += s
             totals[key][1] += 1
     print("Match results:")
-    for a, b in PAIRINGS:
+    for a, b in pairings:
         points, count = totals[(a, b)]
         print(f"  {a:>6} vs {b:<6} {points:4.1f} / {count}")
 
-    anchors = {name: float(name[2:]) for pair in PAIRINGS for name in pair if name.startswith("SF")}
-    prior = {f"L{level.number}": float(level.elo) for level in LEVELS}
+    players = sorted({name for pair in pairings for name in pair})
+    anchors = {name: float(name[2:]) for name in players if name.startswith("SF")} | fixed
+    elos = {f"L{level.number}": float(level.elo) for level in LEVELS}
+    prior = {name: elos.get(name, 1500.0) for name in players if name not in anchors}
     ratings, errors = fit_ratings(games, anchors, prior)
     print("\nEstimated ratings (Stockfish UCI_Elo scale):")
-    for level in LEVELS:
-        name = f"L{level.number}"
-        estimate = f"{ratings[name]:6.0f}  +- {errors[name]:3.0f}"
-        print(f"  Level {level.number} {level.name:<9} {estimate}   (was {level.elo})")
+    for name in sorted(prior, key=lambda n: ratings[n]):
+        label = f"Level {name[1:]} {get_level(int(name[1:])).name}" if name.startswith("L") else name
+        was = f"   (was {int(elos[name])})" if name in elos else ""
+        print(f"  {label:<18} {ratings[name]:6.0f}  +- {errors[name]:3.0f}{was}")
     return 0
 
 

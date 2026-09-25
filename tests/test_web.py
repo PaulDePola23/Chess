@@ -6,6 +6,7 @@ import urllib.request
 import chess
 import pytest
 
+from chessbot.levels import LEVELS
 from chessbot.search import Searcher
 from chessbot.server import ChessBotServer, config_js, pieces_js
 from chessbot.webapi import engine_reply, game_state, move_accuracy, review_move, winning_chances
@@ -210,7 +211,7 @@ def test_serves_config_and_lessons(server):
     status, _, body = request(server + "/config.js")
     assert status == 200
     config = json.loads(body.decode().split("=", 1)[1].strip().rstrip(";"))
-    assert [level["level"] for level in config["levels"]] == [1, 2, 3, 4, 5, 6]
+    assert [level["level"] for level in config["levels"]] == [level.number for level in LEVELS]
     assert config["stats"] is None
     status, content_type, body = request(server + "/lessons.json")
     assert status == 200 and content_type == "application/json"

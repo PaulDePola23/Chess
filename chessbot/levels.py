@@ -6,13 +6,24 @@ pick one at random, favouring better moves: the higher the ``temperature``
 the lowest levels sometimes play a random legal move (``blunder_rate``),
 which is how they end up hanging pieces the way beginners do.
 
-The two upper levels use the full search, capped by a node count rather than
-a time limit so that they play just as well in a slow browser as natively.
+The three upper levels use the full search, capped by a node count rather
+than a time limit so that they play just as well in a slow browser as natively.
 
 The Elo figures come from matches against Stockfish 16 with
 ``UCI_LimitStrength`` and between neighbouring levels (see
-``scripts/calibrate_levels.py``). Treat them as rough: a few dozen games per
-level, on Stockfish's rating scale, which is not the same as any online site's.
+``scripts/calibrate_levels.py``), 20 games per pairing, rounded to 50:
+
+    level      measured    games that pinned it down
+    Rookie      306 +- 88  4.5/20 vs Novice
+    Novice      500 +- 73  1/20 vs Casual
+    Casual      895 +- 68  3/20 vs Club, 1.5/20 vs SF1320
+    Club       1137 +- 61  5/20 vs SF1320
+    Skilled    1385 +- 52  18.5/20 vs Club, 11/20 vs SF1320, 2/20 vs Strong
+    Strong     1647 +- 52  15/20 vs SF1320, 14/20 vs SF1600
+    Expert     1910 +- 53  15.5/20 vs SF1600, 11/20 vs SF1900
+
+Treat them as rough: Stockfish's scale is not the same as any online site's,
+and the levels below Stockfish's minimum of 1320 are extrapolated.
 """
 
 from __future__ import annotations
@@ -42,12 +53,13 @@ class Level:
 
 
 LEVELS = [
-    Level(1, "Beginner", 700, rank_depth=1, temperature=150, blunder_rate=0.2),
-    Level(2, "Novice", 900, rank_depth=1, temperature=80, blunder_rate=0.08),
-    Level(3, "Casual", 1100, rank_depth=2, temperature=50, blunder_rate=0.03),
-    Level(4, "Club", 1300, rank_depth=2, temperature=20),
-    Level(5, "Strong", 1500, nodes=12_000),
-    Level(6, "Expert", 1700, nodes=40_000),
+    Level(1, "Rookie", 300, rank_depth=1, temperature=150, blunder_rate=0.2),
+    Level(2, "Novice", 500, rank_depth=1, temperature=80, blunder_rate=0.08),
+    Level(3, "Casual", 900, rank_depth=2, temperature=50, blunder_rate=0.03),
+    Level(4, "Club", 1150, rank_depth=2, temperature=20),
+    Level(5, "Skilled", 1400, nodes=1_500),
+    Level(6, "Strong", 1650, nodes=12_000),
+    Level(7, "Expert", 1900, nodes=40_000),
 ]
 DEFAULT_LEVEL = 3
 
