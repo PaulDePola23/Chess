@@ -55,7 +55,9 @@ setting until you choose):
   principles, checks-captures-threats, forks, pins, skewers, discovered
   attacks and basic mates), each with a puzzle to solve on the board.
 - **Stats**: a leaderboard of everyone who entered a name, ranked by an
-  estimated rating, with each player's record, accuracy and recent games.
+  estimated rating. Each player's page has a rating-over-time chart, badges
+  to collect, results by level, and their recent games, which can be replayed
+  move by move and reviewed.
 
 The engine runs on your machine, in Python. The server uses only the
 standard library and listens on `127.0.0.1`, so only your computer can reach

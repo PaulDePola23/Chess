@@ -9,7 +9,15 @@ import pytest
 from chessbot.levels import LEVELS
 from chessbot.search import Searcher
 from chessbot.server import ChessBotServer, config_js, pieces_js
-from chessbot.webapi import engine_reply, game_state, move_accuracy, review_move, suggest_move, winning_chances
+from chessbot.webapi import (
+    engine_reply,
+    game_state,
+    move_accuracy,
+    replay_game,
+    review_move,
+    suggest_move,
+    winning_chances,
+)
 
 
 def test_initial_state():
@@ -269,3 +277,20 @@ def test_api_hint(server):
     status, _, body = request(server + "/api/hint", {"moves": ["e2e4", "e7e5", "d1h5", "b8c6", "f1c4", "g8f6"]})
     assert status == 200
     assert json.loads(body)["san"] == "Qxf7#"
+
+
+def test_replay_game():
+    moves = ["f2f3", "e7e5", "g2g4", "d8h4"]
+    replay = replay_game(moves)
+    assert replay["san"] == ["f3", "e5", "g4", "Qh4#"]
+    assert replay["fens"][0] == chess.STARTING_FEN
+    assert replay["fens"][-1] == game_state(moves)["fen"]
+    assert replay["checks"] == [None, None, None, None, "e1"]
+    with pytest.raises(ValueError):
+        replay_game(["e2e5"])
+
+
+def test_api_replay(server):
+    status, _, body = request(server + "/api/replay", {"moves": ["e2e4", "e7e5"]})
+    assert status == 200
+    assert json.loads(body)["san"] == ["e4", "e5"]

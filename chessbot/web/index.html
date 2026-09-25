@@ -106,7 +106,7 @@
         </a>
         <a class="feature" href="#stats">
           <h3>Stats</h3>
-          <p>Everyone who plays with a name, ranked by estimated rating, with each player's record by level, accuracy and recent games.</p>
+          <p>Everyone who plays with a name, ranked by estimated rating. Each player gets a rating chart, badges to collect, and replays of their games.</p>
         </a>
       </div>
     </section>
@@ -321,6 +321,22 @@
       <button type="button" id="stats-back">All players</button>
       <h3 class="player-title" id="player-title"></h3>
       <dl class="tiles" id="player-tiles"></dl>
+      <section class="chart-block" id="rating-chart-block" hidden aria-labelledby="rating-chart-title">
+        <h4 id="rating-chart-title">Rating over time</h4>
+        <p class="chart-sub">Estimated rating after each rated game</p>
+        <div class="chart" id="rating-chart"></div>
+        <details class="chart-table">
+          <summary>Show as a table</summary>
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead><tr><th scope="col" class="num">Game</th><th scope="col">Date</th><th scope="col">Result</th><th scope="col" class="num">Rating after</th></tr></thead>
+              <tbody id="rating-table"></tbody>
+            </table>
+          </div>
+        </details>
+      </section>
+      <h4>Badges</h4>
+      <ul class="badges" id="player-badges"></ul>
       <h4>By level</h4>
       <div class="table-wrap">
         <table class="data-table">
@@ -337,6 +353,7 @@
         </table>
       </div>
       <h4>Recent games</h4>
+      <p class="chart-sub" id="replay-tip">Click a game to replay it.</p>
       <div class="table-wrap">
         <table class="data-table">
           <thead>
@@ -352,6 +369,43 @@
           </thead>
           <tbody id="player-games"></tbody>
         </table>
+      </div>
+    </div>
+
+    <div id="stats-game" hidden>
+      <button type="button" id="viewer-back">Back</button>
+      <h3 class="player-title" id="viewer-title"></h3>
+      <p class="viewer-meta" id="viewer-meta"></p>
+      <div class="viewer">
+        <div class="board-wrap viewer-board" id="viewer-wrap">
+          <div class="board" id="viewer-board" aria-label="Game replay board"></div>
+          <div class="promotion" hidden><div class="promotion-card"><div class="promotion-choices"></div></div></div>
+        </div>
+        <div class="viewer-side">
+          <div class="viewer-controls" role="group" aria-label="Move through the game">
+            <button type="button" id="viewer-first" aria-label="Start of the game">⏮</button>
+            <button type="button" id="viewer-prev" aria-label="Previous move">◀</button>
+            <span class="viewer-position" id="viewer-position" aria-live="polite"></span>
+            <button type="button" id="viewer-next" aria-label="Next move">▶</button>
+            <button type="button" id="viewer-last" aria-label="End of the game">⏭</button>
+          </div>
+          <div class="sheet viewer-sheet" id="viewer-sheet">
+            <table>
+              <thead><tr><th scope="col">#</th><th scope="col">White</th><th scope="col">Black</th></tr></thead>
+              <tbody id="viewer-moves"></tbody>
+            </table>
+          </div>
+          <button type="button" class="primary" id="viewer-review">Review this game</button>
+          <p class="review-progress-text" id="viewer-review-status" hidden></p>
+          <div id="viewer-review-summary" hidden>
+            <div class="review-score">
+              <span class="review-accuracy" id="viewer-accuracy">–</span>
+              <span class="review-accuracy-label">accuracy</span>
+            </div>
+            <ul class="verdict-counts" id="viewer-counts"></ul>
+            <ol class="mistakes" id="viewer-mistakes"></ol>
+          </div>
+        </div>
       </div>
     </div>
     <p class="stats-footnote">Ratings are estimated from results against the bot's levels: the average rating of the levels you played, plus 400 × (wins − losses) ÷ games. Games where you took back a move or used a hint don't count. A <span class="provisional">?</span> means fewer than 5 rated games.</p>

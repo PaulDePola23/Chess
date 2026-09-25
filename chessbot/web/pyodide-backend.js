@@ -13,7 +13,7 @@
     const BRIDGE = [
       "import json",
       "from chessbot.search import Searcher",
-      "from chessbot.webapi import engine_reply, game_state, review_move, suggest_move",
+      "from chessbot.webapi import engine_reply, game_state, replay_game, review_move, suggest_move",
       "_searcher = Searcher()",
       "def _call(method, params_json, progress):",
       "    params = json.loads(params_json)",
@@ -27,6 +27,8 @@
       "        return json.dumps(review_move(params['moves'], params['ply'], _searcher))",
       "    if method == 'hint':",
       "        return json.dumps(suggest_move(params['moves'], _searcher))",
+      "    if method == 'replay':",
+      "        return json.dumps(replay_game(params['moves']))",
       "    raise ValueError('unknown method ' + method)",
       "_call",
     ].join("\n");
@@ -151,5 +153,6 @@
   backend.move = (moves, level, onProgress) => call("move", { moves, level }, onProgress);
   backend.review = (moves, ply) => call("review", { moves, ply });
   backend.hint = (moves) => call("hint", { moves });
+  backend.replay = (moves) => call("replay", { moves });
   window.chessbotBackend = backend;
 })();

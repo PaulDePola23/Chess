@@ -250,6 +250,26 @@ def review_move(
     }
 
 
+def replay_game(moves: list[str], fen: str | None = None) -> dict:
+    """Every position of a game, for stepping through it: {"fens", "san", "checks", "opening"}.
+
+    ``fens[0]`` is the starting position and ``fens[i]`` the position after
+    ``moves[:i]``; ``checks[i]`` is the checked king's square there, if any.
+    """
+    board = _board_from([], fen)
+    fens, san, checks = [board.fen()], [], [None]
+    for uci in moves:
+        move = chess.Move.from_uci(uci) if isinstance(uci, str) else None
+        if move is None or move not in board.legal_moves:
+            raise ValueError(f"illegal move {uci!r} in position {board.fen()}")
+        san.append(board.san(move))
+        board.push(move)
+        fens.append(board.fen())
+        king = board.king(board.turn)
+        checks.append(chess.square_name(king) if board.is_check() and king is not None else None)
+    return {"fens": fens, "san": san, "checks": checks, "opening": None if fen else opening_name(board)}
+
+
 def suggest_move(moves: list[str], searcher: Searcher, fen: str | None = None, nodes: int = HINT_NODES) -> dict:
     """A strong move for the side to move after ``moves``, for the hint button."""
     board = _board_from(moves, fen)

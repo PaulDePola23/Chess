@@ -82,6 +82,7 @@
       move: (moves, level) => post("/api/move", { moves, level }),
       review: (moves, ply) => post("/api/review", { moves, ply }),
       hint: (moves) => post("/api/hint", { moves }),
+      replay: (moves) => post("/api/replay", { moves }),
     };
   }
 
@@ -1376,8 +1377,10 @@
         b.count - a.count,
     );
     const detail = statsPlayer && players.find((p) => p.name.toLowerCase() === statsPlayer.toLowerCase());
-    $("stats-overview").hidden = Boolean(detail);
-    $("stats-player").hidden = !detail;
+    $("stats-overview").hidden = Boolean(detail) || Boolean(viewer.record);
+    $("stats-player").hidden = !detail || Boolean(viewer.record);
+    $("stats-game").hidden = !viewer.record;
+    if (viewer.record) return renderViewer();
     if (detail) return renderPlayer(detail);
 
     const all = summarizeGames(games);
@@ -1444,6 +1447,8 @@
       tile("Accuracy", acc(p.accuracy), "average over reviewed games"),
       tile("Blunders per game", p.blunders === null ? "–" : p.blunders.toFixed(1)),
     );
+    renderRatingChart(ratingHistory(p.games));
+    renderBadges(p.games);
 
     const byLevel = $("player-levels");
     byLevel.textContent = "";
@@ -1466,12 +1471,18 @@
 
     const recent = $("player-games");
     recent.textContent = "";
-    for (const g of [...p.games].sort((a, b) => (a.played_at < b.played_at ? 1 : -1)).slice(0, 20)) {
+    const recentGames = [...p.games].sort((a, b) => (a.played_at < b.played_at ? 1 : -1)).slice(0, 20);
+    $("replay-tip").hidden = !recentGames.some((g) => g.moves_uci);
+    for (const g of recentGames) {
       const result = { win: "Win", loss: "Loss", draw: "Draw" }[g.result];
+      const replayable = Boolean(g.moves_uci);
       recent.append(
         el(
           "tr",
-          {},
+          replayable
+            ? { class: "clickable", tabindex: "0", title: "Replay this game", onclick: () => openGame(g),
+                onkeydown: (event) => event.key === "Enter" && openGame(g) }
+            : {},
           el("td", { text: formatDate(g.played_at) }),
           el("td", { text: levelName(g) }),
           el("td", { text: g.color }),
@@ -1484,9 +1495,390 @@
     }
   }
 
+  // ------------------------------------------------------------ stats: rating chart
+
+  // The estimated rating after each rated game, oldest first.
+  function ratingHistory(games) {
+    const rated = games.filter((g) => !g.takebacks && !g.hints).sort((a, b) => (a.played_at < b.played_at ? -1 : 1));
+    let elo = 0;
+    let wins = 0;
+    let losses = 0;
+    return rated.map((g, i) => {
+      elo += g.bot_elo;
+      if (g.result === "win") wins++;
+      if (g.result === "loss") losses++;
+      const n = i + 1;
+      return { n, game: g, rating: Math.round(elo / n + (400 * (wins - losses)) / n) };
+    });
+  }
+
+  const SVG = "http://www.w3.org/2000/svg";
+  const svgEl = (tag, attrs = {}) => {
+    const node = document.createElementNS(SVG, tag);
+    for (const [key, value] of Object.entries(attrs)) node.setAttribute(key, value);
+    return node;
+  };
+  let chartPoints = [];
+
+  function resultWords(g) {
+    return `${{ win: "Win", loss: "Loss", draw: "Draw" }[g.result]} vs ${levelName(g)}`;
+  }
+
+  function renderRatingChart(points) {
+    chartPoints = points;
+    $("rating-chart-block").hidden = points.length < 2;
+    const table = $("rating-table");
+    table.textContent = "";
+    for (const pt of [...points].reverse()) {
+      table.append(
+        el(
+          "tr",
+          {},
+          el("td", { class: "num", text: String(pt.n) }),
+          el("td", { text: formatDate(pt.game.played_at) }),
+          el("td", { text: resultWords(pt.game) }),
+          el("td", { class: "num", text: String(pt.rating) }),
+        ),
+      );
+    }
+    if (points.length >= 2) drawRatingChart();
+  }
+
+  function drawRatingChart() {
+    const points = chartPoints;
+    const box = $("rating-chart");
+    box.textContent = "";
+    const width = Math.max(260, box.clientWidth - 24);
+    const height = 220;
+    const m = { top: 14, right: 52, bottom: 26, left: 44 };
+    const ratings = points.map((pt) => pt.rating);
+    const step = Math.max(...ratings) - Math.min(...ratings) > 600 ? 200 : 100;
+    const lo = Math.floor((Math.min(...ratings) - step / 2) / step) * step;
+    const hi = Math.ceil((Math.max(...ratings) + step / 2) / step) * step;
+    const x = (n) => m.left + ((n - 1) / (points.length - 1)) * (width - m.left - m.right);
+    const y = (r) => m.top + (1 - (r - lo) / (hi - lo)) * (height - m.top - m.bottom);
+
+    const svg = svgEl("svg", { viewBox: `0 0 ${width} ${height}`, role: "img",
+      "aria-label": `Estimated rating over ${points.length} rated games, from ${ratings[0]} to ${ratings[ratings.length - 1]}.` });
+    const grid = svgEl("g", { class: "grid" });
+    for (let r = lo; r <= hi; r += step) {
+      grid.append(svgEl("line", { x1: m.left, x2: width - m.right, y1: y(r), y2: y(r) }));
+      const label = svgEl("text", { class: "tick", x: m.left - 8, y: y(r) + 4, "text-anchor": "end" });
+      label.textContent = String(r);
+      svg.append(label);
+    }
+    svg.prepend(grid);
+    const xTicks = [...new Set([1, Math.ceil(points.length / 2), points.length])];
+    for (const n of xTicks) {
+      const label = svgEl("text", { class: "tick", x: x(n), y: height - 6, "text-anchor": "middle" });
+      label.textContent = n === 1 ? "Game 1" : String(n);
+      svg.append(label);
+    }
+    const line = points.map((pt, i) => `${i ? "L" : "M"}${x(pt.n).toFixed(1)},${y(pt.rating).toFixed(1)}`).join(" ");
+    svg.append(svgEl("path", { class: "area", d: `${line} L${x(points.length)},${y(lo)} L${x(1)},${y(lo)} Z` }));
+    svg.append(svgEl("path", { class: "series", d: line }));
+    const end = points[points.length - 1];
+    svg.append(svgEl("circle", { class: "end-dot", cx: x(end.n), cy: y(end.rating), r: 4 }));
+    const endLabel = svgEl("text", { class: "end-label", x: x(end.n) + 9, y: y(end.rating) + 4 });
+    endLabel.textContent = String(end.rating);
+    svg.append(endLabel);
+
+    // Hover: a crosshair snaps to the nearest game; the arrow keys do the same.
+    const crosshair = svgEl("line", { class: "crosshair", y1: m.top, y2: height - m.bottom, visibility: "hidden" });
+    const dot = svgEl("circle", { class: "hover-dot", r: 4, visibility: "hidden" });
+    svg.append(crosshair, dot);
+    const tooltip = el("div", { class: "chart-tooltip", hidden: true });
+    box.append(svg, tooltip);
+    let active = null;
+    const show = (index) => {
+      active = Math.max(0, Math.min(points.length - 1, index));
+      const pt = points[active];
+      crosshair.setAttribute("x1", x(pt.n));
+      crosshair.setAttribute("x2", x(pt.n));
+      dot.setAttribute("cx", x(pt.n));
+      dot.setAttribute("cy", y(pt.rating));
+      crosshair.setAttribute("visibility", "visible");
+      dot.setAttribute("visibility", "visible");
+      tooltip.textContent = "";
+      tooltip.append(el("b", { text: String(pt.rating) }), `Game ${pt.n} · ${resultWords(pt.game)}`);
+      tooltip.hidden = false;
+      const scale = box.clientWidth / width;
+      const left = 12 + x(pt.n) * scale;
+      tooltip.style.left = `${Math.min(left + 10, box.clientWidth - tooltip.offsetWidth - 4)}px`;
+      tooltip.style.top = `${Math.max(4, 12 + y(pt.rating) * scale - tooltip.offsetHeight - 10)}px`;
+    };
+    const hide = () => {
+      crosshair.setAttribute("visibility", "hidden");
+      dot.setAttribute("visibility", "hidden");
+      tooltip.hidden = true;
+      active = null;
+    };
+    svg.addEventListener("pointermove", (event) => {
+      const rect = svg.getBoundingClientRect();
+      const px = ((event.clientX - rect.left) / rect.width) * width;
+      show(Math.round(((px - m.left) / (width - m.left - m.right)) * (points.length - 1)));
+    });
+    svg.addEventListener("pointerleave", hide);
+    box.tabIndex = 0;
+    box.onkeydown = (event) => {
+      if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
+        event.preventDefault();
+        show(active === null ? points.length - 1 : active + (event.key === "ArrowRight" ? 1 : -1));
+      }
+    };
+    box.onblur = hide;
+  }
+
+  let chartResize = null;
+  window.addEventListener("resize", () => {
+    clearTimeout(chartResize);
+    chartResize = setTimeout(() => {
+      if (!$("rating-chart-block").hidden && !$("stats-player").hidden && chartPoints.length >= 2) drawRatingChart();
+    }, 150);
+  });
+
+  // ------------------------------------------------------------ stats: badges
+
+  const BADGES = [
+    { icon: "♙", name: "First win", desc: "Win a game.", earned: (gs) => gs.some((g) => g.result === "win") },
+    { icon: "♘", name: "On a roll", desc: "Win three games in a row.", earned: (gs) => longestStreak(gs) >= 3 },
+    { icon: "♗", name: "Sharpshooter", desc: "Play a game with 90% accuracy or better.",
+      earned: (gs) => gs.some((g) => typeof g.accuracy === "number" && g.accuracy >= 90) },
+    { icon: "♖", name: "Clean sheet", desc: "Win without a single blunder.",
+      earned: (gs) => gs.some((g) => g.result === "win" && g.blunders === 0) },
+    { icon: "♚", name: "On your own", desc: "Win without hints or take-backs.",
+      earned: (gs) => gs.some((g) => g.result === "win" && !g.hints && !g.takebacks) },
+    { icon: "♞", name: "Explorer", desc: "Win at three different levels.",
+      earned: (gs) => new Set(gs.filter((g) => g.result === "win").map((g) => g.level)).size >= 3 },
+    { icon: "♜", name: "Marathon", desc: "Play a game of 60 moves or more.", earned: (gs) => gs.some((g) => g.moves >= 60) },
+    { icon: "♕", name: "Club champion", desc: "Beat Club (1150) or a stronger level.",
+      earned: (gs) => gs.some((g) => g.result === "win" && g.bot_elo >= 1150) },
+    { icon: "♔", name: "Giant slayer", desc: "Beat Strong (1650) or Expert.",
+      earned: (gs) => gs.some((g) => g.result === "win" && g.bot_elo >= 1650) },
+  ];
+
+  function longestStreak(games) {
+    let best = 0;
+    let run = 0;
+    for (const g of [...games].sort((a, b) => (a.played_at < b.played_at ? -1 : 1))) {
+      run = g.result === "win" ? run + 1 : 0;
+      best = Math.max(best, run);
+    }
+    return best;
+  }
+
+  function renderBadges(games) {
+    const list = $("player-badges");
+    list.textContent = "";
+    const sorted = BADGES.map((badge) => ({ ...badge, got: badge.earned(games) })).sort((a, b) => b.got - a.got);
+    for (const badge of sorted) {
+      list.append(
+        el(
+          "li",
+          { class: `badge ${badge.got ? "earned" : "locked"}` },
+          el("span", { class: "badge-icon", "aria-hidden": "true", text: badge.icon }),
+          el("span", { class: "badge-name", text: badge.name }, badge.got ? null : el("span", { class: "sr-only", text: " (not earned yet)" })),
+          el("span", { class: "badge-desc", text: badge.desc }),
+        ),
+      );
+    }
+  }
+
+  // ------------------------------------------------------------ stats: game viewer
+
+  const viewer = { record: null, moves: [], replay: null, ply: 0, review: null, focus: null, token: 0 };
+  const viewerBoard = createBoard($("viewer-wrap"));
+
+  async function openGame(record) {
+    const token = ++viewer.token;
+    viewer.record = record;
+    viewer.moves = record.moves_uci.split(" ").filter(Boolean);
+    viewer.replay = null;
+    viewer.review = null;
+    viewer.focus = null;
+    viewer.ply = viewer.moves.length;
+    renderStats();
+    window.scrollTo(0, 0);
+    try {
+      await backend.ready;
+      const replay = await backend.replay(viewer.moves);
+      if (token !== viewer.token) return;
+      viewer.replay = replay;
+    } catch (error) {
+      $("viewer-meta").textContent = `This game can't be replayed: ${error.message || error}`;
+      return;
+    }
+    renderViewer();
+  }
+
+  function closeGame() {
+    viewer.token++;
+    viewer.record = null;
+    renderStats();
+  }
+
+  const playerPlies = () =>
+    viewer.moves.map((_, i) => i).filter((i) => (i % 2 === 0 ? "white" : "black") === viewer.record.color);
+
+  function renderViewer() {
+    const g = viewer.record;
+    const r = viewer.replay;
+    $("viewer-title").textContent = `${g.player} vs Paul's Chess Bot`;
+    const result = { win: "Win", loss: "Loss", draw: "Draw" }[g.result];
+    const opening = (r && r.opening && r.opening.name) || g.opening;
+    $("viewer-meta").textContent = [levelName(g), `${result} (${g.reason})`, formatDate(g.played_at), opening]
+      .filter(Boolean)
+      .join(" · ");
+    if (!r) {
+      viewerBoard.render({ fen: START_FEN, orientation: g.color });
+      $("viewer-position").textContent = "Loading…";
+      return;
+    }
+    const ply = viewer.ply;
+    const item = viewer.focus !== null && viewer.review ? viewer.review.items[viewer.focus] : null;
+    const marks = {};
+    if (item && ply === item.ply) {
+      marks[item.uci.slice(0, 2)] = marks[item.uci.slice(2, 4)] = "bad";
+      marks[item.best_uci.slice(0, 2)] = marks[item.best_uci.slice(2, 4)] = "good";
+    }
+    viewerBoard.render({
+      fen: r.fens[ply],
+      orientation: g.color,
+      last: ply > 0 && !item ? viewer.moves[ply - 1] : null,
+      check: r.checks[ply],
+      marks,
+    });
+    $("viewer-position").textContent =
+      ply === 0 ? `Start · 0/${r.san.length}` : `${Math.ceil(ply / 2)}${ply % 2 ? "." : "..."} ${r.san[ply - 1]} · ${ply}/${r.san.length}`;
+    $("viewer-first").disabled = $("viewer-prev").disabled = ply === 0;
+    $("viewer-next").disabled = $("viewer-last").disabled = ply === r.san.length;
+
+    const verdicts = {};
+    if (viewer.review) for (const it of viewer.review.items) if (it.verdict) verdicts[it.ply] = it.verdict;
+    const body = $("viewer-moves");
+    body.textContent = "";
+    for (let i = 0; i < r.san.length; i += 2) {
+      const tr = el("tr", {}, el("td", { text: `${i / 2 + 1}.` }));
+      for (const index of [i, i + 1]) {
+        const td = el("td");
+        if (index < r.san.length) {
+          const button = el("button", {
+            type: "button",
+            class: "move-link" + (index === ply - 1 ? " active" : ""),
+            text: r.san[index],
+            onclick: () => {
+              viewer.ply = index + 1;
+              viewer.focus = null;
+              renderViewer();
+            },
+          });
+          if (verdicts[index]) button.append(el("span", { class: `glyph ${verdicts[index]}`, text: VERDICT_GLYPHS[verdicts[index]] }));
+          td.append(button);
+        }
+        tr.append(td);
+      }
+      body.append(tr);
+    }
+    const active = body.querySelector(".move-link.active");
+    if (active) active.scrollIntoView({ block: "nearest" });
+
+    const rv = viewer.review;
+    $("viewer-review").hidden = Boolean(rv);
+    $("viewer-review-status").hidden = !rv || rv.status === "done";
+    $("viewer-review-summary").hidden = !rv || rv.status !== "done";
+    if (rv && rv.status === "running") $("viewer-review-status").textContent = `Reviewing… ${rv.items.length} of ${rv.total}`;
+    if (rv && rv.status === "failed") $("viewer-review-status").textContent = `The review couldn't finish: ${rv.error}`;
+    if (rv && rv.status === "done") renderViewerReview();
+  }
+
+  function renderViewerReview() {
+    const summary = reviewSummary(viewer.review.items);
+    $("viewer-accuracy").textContent = summary.accuracy === null ? "–" : `${summary.accuracy.toFixed(0)}%`;
+    const counts = $("viewer-counts");
+    counts.textContent = "";
+    const plurals = { blunder: "blunders", mistake: "mistakes", inaccuracy: "inaccuracies" };
+    for (const verdict of ["blunder", "mistake", "inaccuracy"]) {
+      const n = summary.counts[verdict];
+      counts.append(el("li", { class: verdict }, el("b", { text: String(n) }), ` ${n === 1 ? verdict : plurals[verdict]}`));
+    }
+    const list = $("viewer-mistakes");
+    list.textContent = "";
+    const worst = viewer.review.items
+      .map((it, index) => ({ it, index }))
+      .filter(({ it }) => it.verdict)
+      .sort((a, b) => b.it.loss - a.it.loss)
+      .slice(0, 5);
+    for (const { it, index } of worst) {
+      list.append(
+        el(
+          "li",
+          {},
+          el(
+            "button",
+            {
+              type: "button",
+              "aria-pressed": String(viewer.focus === index),
+              onclick: () => {
+                viewer.focus = viewer.focus === index ? null : index;
+                viewer.ply = viewer.focus === null ? it.ply + 1 : it.ply;
+                renderViewer();
+              },
+            },
+            el("span", { class: "mistake-move", text: `${it.number}${it.color === "white" ? "." : "..."} ${it.san}${VERDICT_GLYPHS[it.verdict]}` }),
+            el("span", { class: `chip ${it.verdict}`, text: VERDICT_NAMES[it.verdict] }),
+            el("span", { class: "mistake-better" }, "Better was ", el("b", { text: it.best_san })),
+            el("span", { class: "mistake-eval", text: `${formatScore(it.before)} → ${formatScore(it.after)} · ${it.line}` }),
+          ),
+        ),
+      );
+    }
+  }
+
+  async function reviewViewedGame() {
+    const token = viewer.token;
+    const plies = playerPlies();
+    viewer.review = { status: "running", items: [], total: plies.length };
+    renderViewer();
+    try {
+      for (const ply of plies) {
+        const item = await backend.review(viewer.moves, ply);
+        if (token !== viewer.token) return;
+        viewer.review.items.push(item);
+        renderViewer();
+      }
+      viewer.review.status = "done";
+    } catch (error) {
+      if (token !== viewer.token) return;
+      viewer.review.status = "failed";
+      viewer.review.error = error.message || String(error);
+    }
+    renderViewer();
+  }
+
+  function stepViewer(ply) {
+    if (!viewer.replay) return;
+    viewer.ply = Math.max(0, Math.min(viewer.replay.san.length, ply));
+    viewer.focus = null;
+    renderViewer();
+  }
+
+  $("viewer-back").addEventListener("click", closeGame);
+  $("viewer-first").addEventListener("click", () => stepViewer(0));
+  $("viewer-prev").addEventListener("click", () => stepViewer(viewer.ply - 1));
+  $("viewer-next").addEventListener("click", () => stepViewer(viewer.ply + 1));
+  $("viewer-last").addEventListener("click", () => stepViewer(Infinity));
+  $("viewer-review").addEventListener("click", reviewViewedGame);
+  document.addEventListener("keydown", (event) => {
+    if ($("stats-game").hidden || $("view-stats").hidden || /INPUT|TEXTAREA|SELECT/.test(event.target.tagName)) return;
+    if (event.target.closest && event.target.closest(".chart")) return;
+    if (event.key === "ArrowLeft") stepViewer(viewer.ply - 1);
+    if (event.key === "ArrowRight") stepViewer(viewer.ply + 1);
+  });
+
   $("stats-refresh").addEventListener("click", () => loadStats(true));
   $("stats-back").addEventListener("click", () => {
     statsPlayer = null;
+    viewer.record = null;
     renderStats();
   });
 
