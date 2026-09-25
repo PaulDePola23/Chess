@@ -1,4 +1,4 @@
-// ChessBot web UI: play, review, lessons and player stats.
+// Paul's Chess web UI: play, review, lessons and player stats.
 //
 // The page never implements chess rules itself. It keeps a game as a list
 // of UCI moves and asks a backend for everything else:
@@ -67,7 +67,7 @@
           body: JSON.stringify(body),
         });
       } catch {
-        throw new Error("Can't reach the ChessBot server. Is `chessbot serve` still running?");
+        throw new Error("Can't reach the chess bot server. Is `chessbot serve` still running?");
       }
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.error || `The server answered ${response.status}.`);
@@ -473,8 +473,8 @@
     ]) {
       const node = $(id);
       node.querySelector(".player-name").textContent =
-        color === game.human ? playerName || "You" : `ChessBot · ${bot.name}`;
-      node.querySelector(".player-side").textContent = color === game.human ? color : `${color} · ${bot.elo}`;
+        color === game.human ? playerName || "You" : "Paul's Chess Bot";
+      node.querySelector(".player-side").textContent = color === game.human ? color : `${color} · ${bot.name} ${bot.elo}`;
       node.classList.toggle("to-move", turn === color);
     }
   }
@@ -485,15 +485,15 @@
     const o = outcome();
     if (o.over) {
       if (o.reason === "resignation") return "You resigned.";
-      if (o.reason === "checkmate") return o.winner === game.human ? "Checkmate. You win." : "Checkmate. ChessBot wins.";
+      if (o.reason === "checkmate") return o.winner === game.human ? "Checkmate. You win." : "Checkmate. The bot wins.";
       return `Draw by ${o.reason}.`;
     }
     if (game.thinking) {
       const depth = game.engineInfo && game.engineInfo.depth;
-      return depth ? `ChessBot is thinking… depth ${depth}` : "ChessBot is thinking…";
+      return depth ? `The bot is thinking… depth ${depth}` : "The bot is thinking…";
     }
     if (game.state.turn === game.human) return game.state.check ? "Your move. You're in check." : "Your move.";
-    return "Waiting for ChessBot…";
+    return "Waiting for the bot…";
   }
 
   function renderStatus() {
@@ -1225,7 +1225,7 @@
     tiles.append(
       tile("Games played", String(games.length)),
       tile("Players", String(players.length)),
-      tile("ChessBot's record", games.length ? `${all.losses}–${all.draws}–${all.wins}` : "–", "wins–draws–losses"),
+      tile("The bot's record", games.length ? `${all.losses}–${all.draws}–${all.wins}` : "–", "wins–draws–losses"),
       tile("Average accuracy", acc(all.accuracy)),
     );
 

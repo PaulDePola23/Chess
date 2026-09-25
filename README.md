@@ -1,14 +1,15 @@
-# ChessBot
+# Paul's Chess
 
-A small chess engine written in Python. [python-chess](https://python-chess.readthedocs.io/)
-handles the rules (move generation, check, castling, en passant); ChessBot
-decides which move to play.
+Play against Paul's Chess Bot, a small chess engine written in Python.
+[python-chess](https://python-chess.readthedocs.io/) handles the rules (move
+generation, check, castling, en passant); the bot decides which move to play.
+The Python package and command are called `chessbot`.
 
 You can play it in the terminal or in your browser, ask it to analyse a
 position, or plug it into any chess GUI or bot framework that speaks the UCI
 protocol.
 
-**Play it online: https://pauldepola23.github.io/testing-/**
+**Play it online: https://pauldepola23.github.io/chess/**
 
 ## Quick start
 

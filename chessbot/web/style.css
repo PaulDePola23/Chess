@@ -122,9 +122,16 @@ button, input, textarea { font: inherit; color: inherit; }
 .theme-toggle.is-dark .icon-sun { display: block; }
 .theme-toggle.is-dark .icon-moon { display: none; }
 @media (max-width: 640px) {
+  .masthead { column-gap: 12px; }
   .masthead .tabs { order: 3; width: 100%; margin-left: 0; }
-  .tabs a { flex: 1; text-align: center; padding-inline: 6px; }
+  .tabs a { flex: 1; min-width: 0; text-align: center; padding-inline: 4px; }
   .theme-toggle { margin-left: auto; }
+  .wordmark { white-space: nowrap; }
+}
+@media (max-width: 480px) {
+  /* Icon only, so the name and the switch share a row (the button keeps its aria-label). */
+  .theme-toggle { padding: 8px 10px; }
+  .theme-toggle span { display: none; }
 }
 .tabs { display: flex; gap: 4px; padding: 4px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
 .tabs a {
@@ -349,7 +356,7 @@ button, input, textarea { font: inherit; color: inherit; }
 }
 
 .status-block { display: flex; flex-direction: column; gap: 12px; }
-.status { margin: 0; font-size: 20px; font-weight: 650; line-height: 1.25; text-wrap: balance; }
+.status { margin: 0; font-size: 20px; font-weight: 650; line-height: 1.25; text-wrap: balance; overflow-wrap: anywhere; }
 
 .readout {
   display: grid;
@@ -557,7 +564,7 @@ button.primary:hover:not(:disabled) { border-color: var(--ink); }
 .mistake-better { grid-column: 1 / -1; font-size: 14px; }
 .mistake-better b { font-family: var(--mono); color: var(--good); }
 .mistake-eval { grid-column: 1 / -1; font: 400 12px/1.4 var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
-.review-empty, .review-error { margin: 0; color: var(--muted); }
+.review-empty, .review-error { margin: 0; color: var(--muted); overflow-wrap: anywhere; }
 .review-viewing {
   display: flex;
   flex-direction: column;
@@ -641,7 +648,7 @@ button.primary:hover:not(:disabled) { border-color: var(--ink); }
 .stats { display: flex; flex-direction: column; gap: 18px; max-width: 1120px; width: 100%; margin: 0 auto; }
 .stats-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .stats-head h2 { margin: 0; font-size: clamp(22px, 3vw, 28px); font-weight: 750; }
-.stats-source, .stats-message { margin: 4px 0 0; color: var(--muted); font-size: 14px; }
+.stats-source, .stats-message { margin: 4px 0 0; color: var(--muted); font-size: 14px; overflow-wrap: anywhere; }
 .stats-message { padding: 12px 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); }
 .tiles {
   display: grid;
