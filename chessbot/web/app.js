@@ -1510,7 +1510,7 @@
       try {
         const [games, attempts] = await Promise.all([stats.list(), stats.listPuzzleAttempts().catch(() => [])]);
         puzzleCache = attempts;
-        statsCache = games;
+        statsCache = currentGames(games);
         statsLoadedAt = Date.now();
         message.hidden = true;
       } catch (error) {
@@ -1543,14 +1543,15 @@
 
   // Ratings are Elo, like the puzzle rating: everyone starts at RATING_START
   // (or their entry in RATING_STARTS) and each rated game moves it, more for a
-  // surprise result. Games from before ratings began stay in the records but
-  // don't move the rating.
+  // surprise result.
   const RATING_START = 1000;
   const RATING_STARTS = { paul: 1150 };
   const RATING_EPOCH = "2026-09-25T21:00:00Z";
   const startingRating = (name) => RATING_STARTS[(name || "").trim().toLowerCase()] || RATING_START;
 
-  // Games that move the rating: no take-backs or hints, and played since ratings began.
+  // Games from before ratings began aren't shown anywhere.
+  const currentGames = (games) => games.filter((g) => g.played_at >= RATING_EPOCH);
+  // Games that move the rating: no take-backs or hints.
   const isRated = (g) => !g.takebacks && !g.hints && g.played_at >= RATING_EPOCH;
 
   function eloWalk(games) {
@@ -3033,7 +3034,7 @@
   async function loadHomeStats() {
     if (!stats.shared) return;
     try {
-      if (!statsCache) statsCache = await stats.list();
+      if (!statsCache) statsCache = currentGames(await stats.list());
     } catch {
       return;
     }

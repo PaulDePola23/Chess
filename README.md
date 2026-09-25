@@ -120,8 +120,8 @@ minimum of 1320 are extrapolated from games between levels.
 A player's rating is an Elo, like the puzzle rating: everyone starts at
 1000 and each rated game moves it up or down depending on the level they
 faced, most when the result is a surprise. Games with take-backs or hints
-don't count, and games from before ratings began stay in the records
-without moving anyone's rating.
+don't count, and games from before ratings began (25 September 2026) aren't
+shown.
 
 ### Shared stats
 
