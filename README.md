@@ -134,3 +134,9 @@ Ideas for making it stronger: an opening book, static exchange evaluation
 (SEE) to prune bad captures, king safety and pawn-structure terms in the
 evaluation, aspiration windows, and tuning the evaluation weights with
 self-play.
+
+## License
+
+ChessBot is free software under the [GNU General Public License v3.0 or later](LICENSE),
+the same license as [python-chess](https://github.com/niklasf/python-chess), which it
+builds on. The chess piece images are Colin M.L. Burnett's, as shipped with python-chess.
