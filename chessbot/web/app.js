@@ -1875,7 +1875,7 @@
     { icon: "♜", name: "Marathon", desc: "Play a game of 60 moves or more.", earned: (gs) => gs.some((g) => g.moves >= 60) },
     { icon: "♕", name: "Club champion", desc: `Beat ${levelInfo(4).name} or a stronger level.`, earned: beatLevel(4) },
     { icon: "♔", name: "Giant slayer", desc: `Beat ${levelInfo(6).name} or a stronger level.`, earned: beatLevel(6) },
-    // The top three levels are named after Paul's animals.
+    // The top three levels are named after two dogs and a cat.
     { icon: "🐕", name: "Summer's friend", desc: "Beat Summer.", earned: beatLevel(8) },
     { icon: "🦴", name: "Titan tamer", desc: "Beat Titan.", earned: beatLevel(9) },
     { icon: "🐈", name: "Top cat", desc: "Beat Pinky.", earned: beatLevel(10) },

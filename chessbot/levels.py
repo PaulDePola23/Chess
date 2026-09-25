@@ -99,28 +99,28 @@ LEVELS = [
     Level(5, "Skilled", 1400, nodes=1_500, book=True, description="Looks a few moves ahead and punishes loose pieces."),
     Level(6, "Strong", 1650, nodes=12_000, book=True, description="Sees most tactics. You'll need a real advantage."),
     Level(7, "Expert", 1900, nodes=40_000, book=True, description="The full engine at a brisk pace. Hard to beat."),
-    # The last three are named after Paul's animals back home.
+    # The last three are named after two dogs and a cat.
     Level(
         8,
         "Summer",
         2000,
         nodes=80_000,
         book=True,
-        description="Named after Paul's dog Summer. The full engine, thinking twice as long.",
+        description="Named after Summer the Dog.",
     ),
     Level(
         9,
         "Titan",
         2500,
         stockfish_elo=2500,
-        description="Named after Paul's dog Titan. Stockfish, held to master strength.",
+        description="Named after Mikayla & Paul's dog, Titan. Good luck.",
     ),
     Level(
         10,
         "Pinky",
         2700,
         stockfish_elo=2700,
-        description="Named after Paul's cat Pinky. Stockfish at grandmaster strength. Good luck.",
+        description="Named after Pinky the cat.",
     ),
 ]
 DEFAULT_LEVEL = 3

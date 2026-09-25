@@ -72,7 +72,7 @@ def test_engine_reply_rejects_bad_levels(level):
         engine_reply([], None, Searcher(), level=level)
 
 
-def test_the_top_levels_are_named_after_pauls_animals():
+def test_the_top_three_levels_are_summer_titan_and_pinky():
     assert [(level.name, level.elo) for level in LEVELS[-3:]] == [("Summer", 2000), ("Titan", 2500), ("Pinky", 2700)]
     summer, titan, pinky = LEVELS[-3:]
     assert summer.stockfish_elo is None and summer.nodes > get_level(7).nodes
