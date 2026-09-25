@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ChessBot</title>
+<link rel="icon" href="data:,">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<!-- app:start -->
+<div class="app">
+  <header class="masthead">
+    <h1 class="wordmark">ChessBot</h1>
+    <p class="spec">negamax · alpha-beta · PVS · hash table · quiescence · ~1600 Elo</p>
+  </header>
+
+  <main class="layout">
+    <section class="board-area" aria-label="Game">
+      <div class="player" id="player-top">
+        <span class="player-name"></span>
+        <span class="player-side"></span>
+      </div>
+      <div class="board-row">
+        <div class="evalbar" id="evalbar" title="Engine evaluation">
+          <div class="evalbar-fill" id="evalbar-fill"></div>
+        </div>
+        <div class="board-wrap">
+          <div class="board" id="board" aria-label="Chess board. You can also type moves in the box next to it."></div>
+          <div class="board-note" id="board-note" hidden></div>
+          <div class="promotion" id="promotion" hidden>
+            <div class="promotion-card" role="dialog" aria-label="Choose a piece to promote to">
+              <p>Promote to</p>
+              <div class="promotion-choices" id="promotion-choices"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="player" id="player-bottom">
+        <span class="player-name"></span>
+        <span class="player-side"></span>
+      </div>
+    </section>
+
+    <aside class="panel">
+      <div class="status-block">
+        <p class="status" id="status" aria-live="polite">Setting up the board…</p>
+        <dl class="readout">
+          <div><dt>Eval</dt><dd id="eval">0.00</dd></div>
+          <div><dt>Depth</dt><dd id="depth">–</dd></div>
+          <div><dt>Nodes</dt><dd id="nodes">–</dd></div>
+          <div><dt>Time</dt><dd id="time">–</dd></div>
+        </dl>
+        <p class="pv" id="pv"></p>
+      </div>
+
+      <form class="move-form" id="move-form" autocomplete="off">
+        <label for="move-input">Type a move</label>
+        <div class="move-form-row">
+          <input id="move-input" name="move" placeholder="e4, Nf3, O-O, e7e8q" spellcheck="false" autocapitalize="off">
+          <button type="submit" id="move-submit">Play</button>
+        </div>
+        <p class="form-error" id="move-error" hidden></p>
+      </form>
+
+      <div class="sheet" id="sheet">
+        <table>
+          <thead><tr><th scope="col">#</th><th scope="col">White</th><th scope="col">Black</th></tr></thead>
+          <tbody id="moves"></tbody>
+        </table>
+        <p class="sheet-empty" id="sheet-empty">No moves yet.</p>
+      </div>
+
+      <div class="controls">
+        <fieldset class="segmented">
+          <legend>Play as</legend>
+          <label><input type="radio" name="color" id="color-white" value="white" checked><span>White</span></label>
+          <label><input type="radio" name="color" id="color-black" value="black"><span>Black</span></label>
+        </fieldset>
+        <fieldset class="segmented">
+          <legend>Thinking time</legend>
+          <label><input type="radio" name="strength" id="strength-quick" value="quick"><span>0.5 s</span></label>
+          <label><input type="radio" name="strength" id="strength-club" value="club" checked><span>1.5 s</span></label>
+          <label><input type="radio" name="strength" id="strength-strong" value="strong"><span>4 s</span></label>
+        </fieldset>
+        <div class="buttons">
+          <button type="button" class="primary" id="new-game">New game</button>
+          <button type="button" id="undo">Take back</button>
+          <button type="button" id="flip">Flip board</button>
+          <button type="button" id="copy-pgn">Copy PGN</button>
+        </div>
+        <textarea class="pgn" id="pgn" readonly hidden aria-label="Game in PGN format"></textarea>
+      </div>
+    </aside>
+  </main>
+
+  <footer class="footer">
+    <p>The engine is <code>chessbot/search.py</code> and <code>chessbot/evaluation.py</code>. Rules come from python-chess, and the pieces are Colin M.L. Burnett's.</p>
+  </footer>
+</div>
+<!-- app:end -->
+<script src="pieces.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

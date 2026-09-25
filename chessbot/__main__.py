@@ -2,6 +2,7 @@
 
 chessbot                      speak UCI on stdin/stdout (what chess GUIs expect)
 chessbot play [--black]       play a game in the terminal
+chessbot serve [--open]       play in the browser at http://localhost:8000
 chessbot analyse FEN          print the best move for a position
 """
 
@@ -32,6 +33,11 @@ def build_parser() -> argparse.ArgumentParser:
     play_parser.add_argument("--depth", type=int, help="limit the engine's search depth (makes it weaker)")
     play_parser.add_argument("--fen", default=chess.STARTING_FEN, help="start from this position")
     play_parser.add_argument("--ascii", action="store_true", help="draw pieces as letters instead of symbols")
+
+    serve_parser = commands.add_parser("serve", help="play in your web browser")
+    serve_parser.add_argument("--host", default="127.0.0.1", help="address to listen on (default: this computer only)")
+    serve_parser.add_argument("--port", type=int, default=8000, help="port to listen on (default: 8000)")
+    serve_parser.add_argument("--open", action="store_true", help="open the page in your browser")
 
     analyse_parser = commands.add_parser("analyse", aliases=["analyze"], help="print the best move for a position")
     analyse_parser.add_argument("fen", nargs="?", default=chess.STARTING_FEN, help="position in FEN")
@@ -75,6 +81,11 @@ def main(argv: list[str] | None = None) -> int:
             )
         except KeyboardInterrupt:
             print()
+        return 0
+    if args.command == "serve":
+        from .server import serve
+
+        serve(args.host, args.port, args.open)
         return 0
     return analyse(args.fen, args.time, args.depth)
 

@@ -1,0 +1,125 @@
+"""A small local web server for playing ChessBot in the browser.
+
+    chessbot serve            then open http://127.0.0.1:8000
+
+Uses only the standard library. The page lives in ``chessbot/web``; the
+engine runs here in Python and the page talks to it through two JSON
+endpoints:
+
+    POST /api/state  {"moves": [...], "fen"?}                   -> game state
+    POST /api/move   {"moves": [...], "fen"?, "think_time"?}    -> engine reply + new state
+"""
+
+from __future__ import annotations
+
+import json
+import threading
+import webbrowser
+from http import HTTPStatus
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from importlib import resources
+
+import chess.svg
+
+from . import __version__
+from .search import Searcher
+from .webapi import engine_reply, game_state
+
+STATIC_FILES = {
+    "/": ("index.html", "text/html; charset=utf-8"),
+    "/index.html": ("index.html", "text/html; charset=utf-8"),
+    "/app.js": ("app.js", "text/javascript; charset=utf-8"),
+    "/style.css": ("style.css", "text/css; charset=utf-8"),
+}
+MAX_BODY = 1_000_000
+
+
+def pieces_js() -> str:
+    """A script defining ``window.CHESSBOT_PIECES``: SVG artwork keyed by piece letter ("K", "k", ...).
+
+    The drawings are Colin M.L. Burnett's pieces as shipped with python-chess.
+    """
+    pieces = {symbol: chess.svg.piece(chess.Piece.from_symbol(symbol)) for symbol in "PNBRQKpnbrqk"}
+    return "window.CHESSBOT_PIECES = " + json.dumps(pieces) + ";\n"
+
+
+def read_static(name: str) -> bytes:
+    return resources.files("chessbot").joinpath("web", name).read_bytes()
+
+
+class ChessBotServer(ThreadingHTTPServer):
+    daemon_threads = True
+
+    def __init__(self, address):
+        super().__init__(address, ChessBotHandler)
+        self.searcher = Searcher()
+        # One search at a time: the engine's hash table is not thread safe,
+        # and the machine only has so many cores anyway.
+        self.engine_lock = threading.Lock()
+
+
+class ChessBotHandler(BaseHTTPRequestHandler):
+    server: ChessBotServer
+    server_version = f"ChessBot/{__version__}"
+
+    def log_request(self, code="-", size="-") -> None:
+        # Keep the terminal quiet apart from failed requests.
+        if int(code) >= 400:
+            super().log_request(code, size)
+
+    def send_body(self, status: int, body: bytes, content_type: str) -> None:
+        self.send_response(status)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def send_json(self, status: int, payload: dict) -> None:
+        self.send_body(status, json.dumps(payload).encode(), "application/json")
+
+    def do_GET(self) -> None:
+        path = self.path.split("?", 1)[0]
+        if path == "/pieces.js":
+            self.send_body(HTTPStatus.OK, pieces_js().encode(), "text/javascript; charset=utf-8")
+        elif path in STATIC_FILES:
+            name, content_type = STATIC_FILES[path]
+            self.send_body(HTTPStatus.OK, read_static(name), content_type)
+        else:
+            self.send_json(HTTPStatus.NOT_FOUND, {"error": f"no such page: {path}"})
+
+    def do_POST(self) -> None:
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+            if not 0 <= length <= MAX_BODY:
+                self.send_json(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, {"error": "request too large"})
+                return
+            request = json.loads(self.rfile.read(length) or b"{}")
+            if not isinstance(request, dict):
+                raise ValueError("expected a JSON object")
+            moves = request.get("moves", [])
+            fen = request.get("fen")
+            if self.path == "/api/state":
+                self.send_json(HTTPStatus.OK, game_state(moves, fen))
+            elif self.path == "/api/move":
+                with self.server.engine_lock:
+                    reply = engine_reply(moves, request.get("think_time", 1.5), self.server.searcher, fen)
+                self.send_json(HTTPStatus.OK, reply)
+            else:
+                self.send_json(HTTPStatus.NOT_FOUND, {"error": f"no such endpoint: {self.path}"})
+        except (ValueError, TypeError) as error:
+            self.send_json(HTTPStatus.BAD_REQUEST, {"error": str(error)})
+
+
+def serve(host: str = "127.0.0.1", port: int = 8000, open_browser: bool = False) -> None:
+    server = ChessBotServer((host, port))
+    url = f"http://{'localhost' if host in ('127.0.0.1', '0.0.0.0', '') else host}:{server.server_address[1]}/"
+    print(f"ChessBot is ready at {url}  (Ctrl+C to stop)", flush=True)
+    if open_browser:
+        webbrowser.open(url)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.server_close()

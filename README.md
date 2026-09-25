@@ -4,8 +4,9 @@ A small chess engine written in Python. [python-chess](https://python-chess.read
 handles the rules (move generation, check, castling, en passant); ChessBot
 decides which move to play.
 
-You can play it in the terminal, ask it to analyse a position, or plug it into
-any chess GUI or bot framework that speaks the UCI protocol.
+You can play it in the terminal or in your browser, ask it to analyse a
+position, or plug it into any chess GUI or bot framework that speaks the UCI
+protocol.
 
 ## Quick start
 
@@ -26,6 +27,22 @@ Enter moves as SAN (`e4`, `Nf3`, `O-O`, `exd8=Q`) or UCI (`e2e4`, `g1f3`,
 `e1g1`, `e7d8q`). During a game you can also type `undo`, `hint`, `fen`,
 `help` or `quit`. Use `--ascii` if your terminal doesn't draw the chess
 symbols well.
+
+### In the browser
+
+```bash
+chessbot serve --open    # or open http://localhost:8000 yourself
+```
+
+The page shows a board you can click or drag on, the engine's evaluation
+and search depth as it thinks, a move list, and buttons to take back moves,
+flip the board, change the thinking time and copy the game as PGN. You can
+also type moves in the box next to the board. The engine runs on your
+machine, in Python. The server uses only the standard library and listens
+on `127.0.0.1`, so only your computer can reach it (use `--host 0.0.0.0` to
+play from another device on your network).
+
+### Analysing a position
 
 To get the best move in a position:
 
@@ -73,6 +90,7 @@ from the opening.
 | [`chessbot/search.py`](chessbot/search.py) | Chooses the move. Iterative-deepening alpha-beta (negamax with PVS), a transposition table, quiescence search, MVV-LVA / killer / history move ordering, null-move pruning, late-move reductions, check extensions, mate-distance scoring, and repetition and fifty-move draw detection. |
 | [`chessbot/uci.py`](chessbot/uci.py) | The UCI protocol. The search runs on its own thread so `stop` and `isready` get answered while it is thinking. |
 | [`chessbot/play.py`](chessbot/play.py) | The terminal game. |
+| [`chessbot/webapi.py`](chessbot/webapi.py), [`chessbot/server.py`](chessbot/server.py), [`chessbot/web/`](chessbot/web) | The browser game. The page keeps the game as a list of moves and asks the server for legal moves, notation and the engine's reply, so all chess logic stays in Python. |
 | [`chessbot/__main__.py`](chessbot/__main__.py) | The `chessbot` command. |
 
 From Python:
@@ -88,7 +106,7 @@ print(result.best_move, result.score, result.depth, result.pv)
 ## Development
 
 ```bash
-pytest               # tests: mates, tactics, stalemate avoidance, perpetual check, UCI, CLI
+pytest               # tests: mates, tactics, stalemate avoidance, perpetual check, UCI, CLI, web API
 ruff check .         # lint
 ruff format .        # format
 ```

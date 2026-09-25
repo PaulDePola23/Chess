@@ -19,6 +19,9 @@ chessbot = "chessbot.__main__:main"
 [tool.setuptools]
 packages = ["chessbot"]
 
+[tool.setuptools.package-data]
+chessbot = ["web/*"]
+
 [tool.setuptools.dynamic]
 version = { attr = "chessbot.__version__" }
 
