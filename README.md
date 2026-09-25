@@ -9,7 +9,7 @@ You can play it in the terminal or in your browser, ask it to analyse a
 position, or plug it into any chess GUI or bot framework that speaks the UCI
 protocol.
 
-**Play it online: https://pauldepola23.github.io/chess/**
+**Play it online: https://pauldepola23.github.io/Chess/**
 
 ## Quick start
 
