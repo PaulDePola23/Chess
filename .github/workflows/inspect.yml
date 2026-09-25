@@ -1,0 +1,24 @@
+name: Inspect stats (temporary)
+
+# A one-off, read-only look at the latest rows, for debugging. Removed after use.
+on: workflow_dispatch
+
+permissions:
+  contents: read
+
+jobs:
+  show:
+    runs-on: ubuntu-latest
+    env:
+      STATS_URL: ${{ vars.CHESSBOT_STATS_URL || 'https://vpqsrrhoqhoyjmndnltc.supabase.co' }}
+      STATS_KEY: ${{ vars.CHESSBOT_STATS_KEY || 'sb_publishable_ORnp8JSnyWblH5jt_0-uqw_h7Hx-mhx' }}
+    steps:
+      - name: Latest puzzle attempts and games
+        run: |
+          for query in \
+            "puzzle_attempts?select=player,puzzle_id,solved,rating_after,played_at&order=played_at.desc&limit=15" \
+            "games?select=player,level,result,played_at&order=played_at.desc&limit=10"; do
+            echo "== $query"
+            curl --fail --silent --show-error -H "apikey: $STATS_KEY" "$STATS_URL/rest/v1/$query"
+            echo
+          done
