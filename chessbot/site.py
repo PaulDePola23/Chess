@@ -73,7 +73,6 @@ def build_site(out_dir: str | Path, stats_url: str | None = None, stats_key: str
             raise RuntimeError(f"index.html no longer contains {old!r}; update chessbot/site.py")
         page = page.replace(old, new)
 
-    (out / "index.html").write_text(page)
     for name in [
         "app.js",
         "style.css",
@@ -93,10 +92,26 @@ def build_site(out_dir: str | Path, stats_url: str | None = None, stats_key: str
     (out / "pieces.js").write_text(pieces_js())
     (out / "config.js").write_text(config_js(stats_url, stats_key, offline=True))
     (out / "python.json").write_text(json.dumps(python_sources()))
+    (out / "index.html").write_text(versioned(page, out))
     write_service_worker(out, web.joinpath("sw.js").read_text())
     # Serve files as they are; GitHub Pages would otherwise run them through Jekyll.
     (out / ".nojekyll").write_text("")
     return out
+
+
+# The page's own scripts and stylesheet. Browsers may reuse them for 10 minutes
+# (GitHub Pages' caching) without asking, even behind the service worker, so
+# the page asks for them by a version that changes with their content.
+VERSIONED_FILES = ["style.css", "config.js", "pieces.js", "pyodide-backend.js", "app.js"]
+
+
+def versioned(page: str, out: Path) -> str:
+    """``page`` with each of VERSIONED_FILES referenced as ``name?v=<hash of its content>``."""
+    for name in VERSIONED_FILES:
+        version = hashlib.sha256((out / name).read_bytes()).hexdigest()[:10]
+        for attribute in ("src", "href"):
+            page = page.replace(f'{attribute}="{name}"', f'{attribute}="{name}?v={version}"')
+    return page
 
 
 def write_service_worker(out: Path, template: str) -> None:

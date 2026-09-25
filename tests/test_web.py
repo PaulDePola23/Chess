@@ -169,7 +169,7 @@ def test_build_site(tmp_path, capsys):
         ".nojekyll",
     }
     page = (site / "index.html").read_text()
-    assert page.index("pyodide-backend.js") < page.index('src="app.js"')
+    assert page.index('src="pyodide-backend.js') < page.index('src="app.js')
     assert "running in your browser with Pyodide" in page
     sources = json.loads((site / "python.json").read_text())
     assert {"chessbot/search.py", "chessbot/levels.py", "chessbot/webapi.py", "chess/__init__.py"} <= set(sources)
@@ -373,3 +373,18 @@ def test_stockfish_is_served_from_the_site(tmp_path, server):
     assert status == 200 and content_type.startswith("text/javascript")
     status, _, _ = request(f"{server}/stockfish/../app.js")
     assert status == 404
+
+
+def test_site_asks_for_its_scripts_by_content_version(tmp_path):
+    # Browsers may reuse a file for 10 minutes without asking, so each deploy's
+    # page must ask for its scripts and stylesheet under new addresses.
+    import hashlib
+
+    from chessbot.site import VERSIONED_FILES, build_site
+
+    site = build_site(tmp_path / "site")
+    page = (site / "index.html").read_text()
+    for name in VERSIONED_FILES:
+        version = hashlib.sha256((site / name).read_bytes()).hexdigest()[:10]
+        assert f'="{name}?v={version}"' in page, name
+        assert f'="{name}"' not in page, name

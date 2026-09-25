@@ -16,7 +16,8 @@ self.addEventListener("install", (event) => {
   event.waitUntil(
     caches
       .open(APP_CACHE)
-      .then((cache) => cache.addAll(APP_FILES))
+      // "reload" skips the browser's HTTP cache, so a new version never stores stale files.
+      .then((cache) => cache.addAll(APP_FILES.map((url) => new Request(url, { cache: "reload" }))))
       .then(() => self.skipWaiting()),
   );
 });
@@ -42,7 +43,10 @@ function networkFirst(request) {
         return hit;
       });
     const timer = setTimeout(fromCache, NETWORK_TIMEOUT);
-    fetch(request)
+    // GitHub Pages lets browsers reuse files for 10 minutes; "no-cache" checks
+    // with the server every time (a quick 304 when nothing changed), so an
+    // update shows on the next reload.
+    fetch(request, { cache: "no-cache" })
       .then((response) => {
         clearTimeout(timer);
         if (response.ok) {
