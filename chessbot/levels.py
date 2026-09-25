@@ -113,14 +113,14 @@ LEVELS = [
         "Titan",
         2500,
         stockfish_elo=2500,
-        description="Named after Mikayla & Paul's dog, Titan. Good luck.",
+        description="Named after Mikayla & Paul's dog, Titan.",
     ),
     Level(
         10,
         "Pinky",
         2700,
         stockfish_elo=2700,
-        description="Named after Pinky the cat.",
+        description="Named after Pinky the cat. Good luck.",
     ),
 ]
 DEFAULT_LEVEL = 3
