@@ -1,4 +1,4 @@
-name: Keep the database awake
+name: Keep the site awake and check it
 
 # Supabase pauses free projects after about a week without requests, which
 # would switch off the Stats page, puzzle ratings and online games until the
@@ -6,6 +6,9 @@ name: Keep the database awake
 # table the site uses, which also checks that they are all set up.
 # If the project has been paused anyway, the request fails and GitHub emails
 # the repository owner about the failed run.
+#
+# It also fetches the live site's main files, the Stockfish engine and the
+# Python runtime from jsDelivr, so a broken deploy or CDN also fails the run.
 #
 # GitHub also switches off scheduled workflows in public repositories that
 # have had no commits for 60 days, so each run switches this one back on.
@@ -36,6 +39,19 @@ jobs:
             rows=$(curl --fail --silent --show-error --retry 3 --retry-all-errors --max-time 30 \
               -H "apikey: $STATS_KEY" "${auth[@]}" "$STATS_URL/rest/v1/$table?select=id&limit=1")
             echo "$table: $rows"
+          done
+      - name: Check the live site and the files it loads
+        run: |
+          site="https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}"
+          # The Python runtime comes from jsDelivr; read its address from the live page.
+          pyodide=$(curl --fail --silent --show-error --retry 3 --retry-all-errors "$site/pyodide-backend.js" \
+            | grep --only-matching --max-count=1 'https://cdn.jsdelivr.net/npm/pyodide@[^"]*')
+          for url in "$site/" "$site/app.js" "$site/python.json" "$site/puzzles.json" \
+            "$site/stockfish/stockfish-18-lite-single.js" "$site/stockfish/stockfish-18-lite-single.wasm" \
+            "${pyodide}pyodide.mjs" "${pyodide}pyodide.asm.wasm"; do
+            summary=$(curl --fail --silent --show-error --retry 3 --retry-all-errors --max-time 60 \
+              --output /dev/null --write-out "%{http_code} %{size_download} bytes %{content_type}" "$url")
+            echo "$url: $summary"
           done
       - name: Keep this schedule switched on
         env:

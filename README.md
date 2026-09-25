@@ -124,8 +124,9 @@ Games where they took back a move don't count towards it.
 ### Shared stats
 
 Supabase pauses free projects after about a week without requests. The
-**Keep the database awake** workflow (`.github/workflows/keepalive.yml`)
-reads a row from each table every three days so that never happens; if the project gets
+**Keep the site awake and check it** workflow (`.github/workflows/keepalive.yml`)
+reads a row from each table every three days so that never happens, and
+fetches the live site's main files and engines; if the project gets
 paused anyway, the run fails and GitHub emails you, and you can restore it
 from the Supabase dashboard. GitHub switches off schedules in repositories
 without commits for 60 days, so the workflow switches itself back on each
