@@ -2,7 +2,8 @@ name: Keep the database awake
 
 # Supabase pauses free projects after about a week without requests, which
 # would switch off the Stats page, puzzle ratings and online games until the
-# project is restored by hand. This asks it for one row every three days.
+# project is restored by hand. Every three days this reads a row from each
+# table the site uses, which also checks that they are all set up.
 # If the project has been paused anyway, the request fails and GitHub emails
 # the repository owner about the failed run.
 #
@@ -26,14 +27,16 @@ jobs:
       STATS_URL: ${{ vars.CHESSBOT_STATS_URL || 'https://vpqsrrhoqhoyjmndnltc.supabase.co' }}
       STATS_KEY: ${{ vars.CHESSBOT_STATS_KEY || 'sb_publishable_ORnp8JSnyWblH5jt_0-uqw_h7Hx-mhx' }}
     steps:
-      - name: Ask the database for one game
+      - name: Read a row from each table the site uses
         run: |
           auth=()
           # Legacy anon keys are JWTs and also go in Authorization.
           if [[ "$STATS_KEY" == eyJ* ]]; then auth=(-H "Authorization: Bearer $STATS_KEY"); fi
-          curl --fail --silent --show-error --retry 3 --retry-all-errors --max-time 30 \
-            -H "apikey: $STATS_KEY" "${auth[@]}" "$STATS_URL/rest/v1/games?select=id&limit=1"
-          echo
+          for table in games puzzle_attempts live_games; do
+            rows=$(curl --fail --silent --show-error --retry 3 --retry-all-errors --max-time 30 \
+              -H "apikey: $STATS_KEY" "${auth[@]}" "$STATS_URL/rest/v1/$table?select=id&limit=1")
+            echo "$table: $rows"
+          done
       - name: Keep this schedule switched on
         env:
           GH_TOKEN: ${{ github.token }}
