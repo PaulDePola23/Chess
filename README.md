@@ -43,7 +43,7 @@ setting until you choose):
 - **Home**: a title page with a replay of Morphy's Opera Game, how to play,
   the ten levels, how it works, and credits.
 - **Play**: a board you can click or drag on (or type moves), ten opponent
-  levels from Rookie (about 300) to Pinky (2700), the engine's
+  levels from Rookie (about 200) to Pinky (2700), the engine's
   evaluation as it thinks, the name of the opening, and buttons to take back
   a move, resign, flip the board and copy the game as PGN. **Coach mode**
   rings pieces that can be taken for free (yours in red, the bot's in green),
@@ -88,14 +88,14 @@ private repo needs a paid GitHub plan), then re-run the workflow.
 
 | Level | Rating | How it plays |
 | ----- | ------ | ------------ |
-| Rookie | ~300 | 1-ply search, lots of randomness, a random move 20% of the time |
-| Novice | ~500 | 1-ply search, less randomness, a random move 8% of the time |
-| Casual | ~900 | 2-ply search, some randomness, a random move 3% of the time |
+| Rookie | ~200 | 1-ply search, lots of randomness, a random move 12% of the time |
+| Novice | ~500 | 1-ply search, a little randomness, a random move 4% of the time |
+| Casual | ~800 | 2-ply search, some randomness, a random move 3% of the time |
 | Club | ~1150 | 2-ply search, a little randomness |
-| Skilled | ~1400 | full search, 1,500 positions a move |
-| Strong | ~1650 | full search, 12,000 positions a move |
-| Expert | ~1900 | full search, 40,000 positions a move |
-| Summer | ~2000 | full search, 80,000 positions a move (about 10 seconds in the browser) |
+| Skilled | ~1450 | full search, 1,500 positions a move |
+| Strong | ~1750 | full search, 12,000 positions a move |
+| Expert | ~1950 | full search, 40,000 positions a move |
+| Summer | ~2100 | full search, 60,000 positions a move (about 8 seconds in the browser) |
 | Titan | 2500 | Stockfish with `UCI_Elo` 2500, a second a move |
 | Pinky | 2700 | Stockfish with `UCI_Elo` 2700, a second a move |
 
@@ -112,7 +112,7 @@ one at random, favouring the better ones. The upper levels use the full
 search with a fixed node budget, so they play equally well in the browser
 and natively. The ratings were measured with `scripts/calibrate_levels.py`,
 which plays the levels against each other and against Stockfish 16 at fixed
-`UCI_Elo` settings (20 games per pairing; the full results are in
+`UCI_Elo` settings (20 to 70 games per pairing; the full results are in
 `chessbot/levels.py`). They're rough, on Stockfish's rating scale (which
 doesn't match any online site exactly), and the ones below Stockfish's
 minimum of 1320 are extrapolated from games between levels.
@@ -213,20 +213,22 @@ and `infinite`, plus `stop`. The options are `Hash` (MB) and `Move Overhead` (ms
 
 ## How strong is it?
 
-We ran a short match at 0.3 seconds a move against Stockfish 16 with
-`UCI_LimitStrength` on. There were 6 games per level, so treat the numbers as
-rough:
+The full engine's strength depends on how long it thinks. Measured against
+Stockfish 16 with `UCI_LimitStrength` (the calibration behind the levels
+table above, 20–24 games per pairing):
 
-| Stockfish `UCI_Elo` | ChessBot score |
-| ------------------- | -------------- |
-| 1320                | 5.5 / 6        |
-| 1600                | 3.5 / 6        |
-| 1900                | 1.5 / 6        |
-| 2200                | 1.5 / 6        |
+| Positions a move | Time natively | Rating (Stockfish's scale) |
+| ---------------- | ------------- | -------------------------- |
+| 1,500            | 0.06 s        | ~1450 (Skilled)            |
+| 12,000           | 0.5 s         | ~1750 (Strong)             |
+| 40,000           | 1.6 s         | ~1950 (Expert)             |
+| 60,000           | 2.4 s         | ~2100 (Summer)             |
+| 80,000           | 3.2 s         | ~2230                      |
 
-That puts it at roughly 1600 on Stockfish's scale. It searches about
-25–30k positions a second, which is 7–8 plies deep in a couple of seconds
-from the opening.
+It searches about 25,000 positions a second in Python, three to four times
+slower in the browser. The pawn-structure, rook and king-shelter terms in the
+evaluation were worth about 50 Elo on their own (58 wins, 22 draws and 40
+losses against the previous evaluation at the same node count).
 
 ## How it works
 

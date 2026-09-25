@@ -47,7 +47,7 @@ def read_volume(volume: str, source: str | None) -> str:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--stockfish", default=shutil.which("stockfish") or "/usr/games/stockfish")
-    parser.add_argument("--depth", type=int, default=16)
+    parser.add_argument("--depth", type=int, default=12)
     parser.add_argument("--threads", type=int, default=4)
     parser.add_argument("--source", help="directory holding a.tsv ... e.tsv (default: download them)")
     args = parser.parse_args()
