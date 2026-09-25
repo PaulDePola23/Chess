@@ -204,6 +204,15 @@
         const response = await fetch(`${url}/rest/v1/puzzle_attempts?select=*&order=played_at.desc&limit=5000`, { headers });
         return response.ok ? response.json() : [];
       },
+      // The latest saved puzzle attempt under this name (any capitalisation), or null.
+      async latestPuzzleAttempt(player) {
+        const name = player.trim();
+        const query = `player=ilike.${encodeURIComponent(name)}&select=player,rating_after,played_at&order=played_at.desc&limit=20`;
+        const response = await fetch(`${url}/rest/v1/puzzle_attempts?${query}`, { headers, cache: "no-store" });
+        if (!response.ok) return null;
+        const rows = await response.json();
+        return rows.find((row) => row.player.trim().toLowerCase() === name.toLowerCase()) || null;
+      },
       async savePuzzleAttempt(record) {
         await fetch(`${url}/rest/v1/puzzle_attempts`, {
           method: "POST",
@@ -2143,6 +2152,25 @@
     }
   }
 
+  // A puzzle rating saved under the player's name that is newer than this
+  // browser's (from another device, or set by hand in the database) replaces it.
+  async function syncPuzzleRating() {
+    const name = playerName.trim();
+    if (!name || !stats.latestPuzzleAttempt) return;
+    let latest = null;
+    try {
+      latest = await stats.latestPuzzleAttempt(name);
+    } catch {
+      return; // offline: keep this browser's rating
+    }
+    const p = trainer.progress;
+    if (!latest || (p.at && Date.parse(latest.played_at) <= Date.parse(p.at))) return;
+    p.rating = latest.rating_after;
+    p.at = latest.played_at;
+    saveTrainer();
+    renderTrainer();
+  }
+
   function pickPuzzle() {
     const { rating, seen } = trainer.progress;
     const unseen = trainer.puzzles.filter((p) => !seen.includes(p.id));
@@ -2250,6 +2278,7 @@
       p.streak = 0;
     }
     p.seen = [...p.seen, trainer.puzzle.id].slice(-2000);
+    p.at = new Date().toISOString(); // when the rating last changed, for syncing between devices
     saveTrainer();
     $("trainer-change").textContent = change >= 0 ? `+${change}` : `−${-change}`;
     $("trainer-change").className = "trainer-change " + (change >= 0 ? "up" : "down");
@@ -2258,12 +2287,12 @@
       stats
         .savePuzzleAttempt({
           id: uuid(),
-          played_at: new Date().toISOString(),
           player: name.slice(0, 24),
           puzzle_id: trainer.puzzle.id,
           puzzle_rating: trainer.puzzle.rating,
           solved,
           rating_after: Math.round(p.rating),
+          played_at: p.at,
         })
         .catch(() => {});
       statsCache = null;
@@ -3037,9 +3066,12 @@
       else tab.removeAttribute("aria-current");
     }
     if (name === "stats") loadStats();
-    if (name === "puzzles" && !trainer.puzzle) {
-      renderTrainer();
-      nextPuzzle();
+    if (name === "puzzles") {
+      const first = !trainer.puzzle;
+      if (first) renderTrainer();
+      // Pick the first puzzle with the synced rating, unless the database is slow to answer.
+      const synced = Promise.race([syncPuzzleRating(), wait(2500)]);
+      if (first) synced.then(nextPuzzle);
     }
     if (name === "home") loadHomeStats();
     if (name === "friend") openFriend(route ? route.toLowerCase() : null);
