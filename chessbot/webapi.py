@@ -1,22 +1,34 @@
 """Game functions for the browser UI, returning plain JSON-friendly dicts.
 
-The web page keeps the game as a list of UCI moves and asks for two things:
-the state of the game after those moves (legal moves, notation, result) and
-the engine's reply. ``chessbot serve`` exposes these over HTTP; any other
-front end can call them directly.
+The web page keeps the game as a list of UCI moves and asks for three things:
+the state of the game after those moves (legal moves, notation, result), the
+engine's reply, and, once the game is over, a review of each of the player's
+moves. ``chessbot serve`` exposes these over HTTP; any other front end can call
+them directly.
 """
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
 
 import chess
 import chess.pgn
 
-from .search import Searcher, SearchResult
+from .levels import choose_move, get_level
+from .search import MATE_SCORE, MATE_THRESHOLD, Searcher, SearchResult
 
 MIN_THINK_TIME = 0.05
 MAX_THINK_TIME = 30.0
+
+# How deep the post-game review searches each position. Depth 3 plus the
+# quiescence search catches hanging pieces and short tactics, and keeps a
+# whole game's review to a few seconds even in the browser.
+REVIEW_DEPTH = 3
+
+# Drops in winning chances (on a -1..1 scale) that make a move an
+# inaccuracy, a mistake or a blunder. These are the thresholds lichess uses.
+VERDICTS = [(0.3, "blunder"), (0.2, "mistake"), (0.1, "inaccuracy")]
 
 
 def _board_from(moves: list[str], fen: str | None = None) -> chess.Board:
@@ -69,6 +81,36 @@ def game_state(moves: list[str], fen: str | None = None) -> dict:
     }
 
 
+def winning_chances(score: int) -> float:
+    """Map a score for the side to move onto -1 (lost) .. 1 (won), as lichess does."""
+    if score >= MATE_THRESHOLD:
+        return 1.0
+    if score <= -MATE_THRESHOLD:
+        return -1.0
+    score = max(-1000, min(1000, score))
+    return 2 / (1 + math.exp(-0.00368208 * score)) - 1
+
+
+def move_accuracy(before: int, after: int) -> float:
+    """Accuracy of a move, 0-100, from the mover's score before and after it (lichess's formula)."""
+    win_before = 50 + 50 * winning_chances(before)
+    win_after = 50 + 50 * winning_chances(after)
+    if win_after >= win_before:
+        return 100.0
+    accuracy = 103.1668100711649 * math.exp(-0.04354415386753951 * (win_before - win_after)) - 3.166924740191411
+    return max(0.0, min(100.0, accuracy))
+
+
+def _score_dict(score: int, mover: chess.Color) -> dict:
+    """A score for ``mover`` as {"score": centipawns, "mate": moves} from White's point of view."""
+    sign = 1 if mover == chess.WHITE else -1
+    if score >= MATE_THRESHOLD:
+        return {"score": None, "mate": sign * ((MATE_SCORE - score + 1) // 2)}
+    if score <= -MATE_THRESHOLD:
+        return {"score": None, "mate": -sign * ((MATE_SCORE + score) // 2)}
+    return {"score": sign * score, "mate": None}
+
+
 def _white_pov(result: SearchResult, board: chess.Board) -> tuple[int | None, int | None]:
     """(centipawns, mate-in) from White's point of view; one of them is None."""
     sign = 1 if board.turn == chess.WHITE else -1
@@ -79,20 +121,22 @@ def _white_pov(result: SearchResult, board: chess.Board) -> tuple[int | None, in
 
 def engine_reply(
     moves: list[str],
-    think_time: float,
+    think_time: float | None,
     searcher: Searcher,
     fen: str | None = None,
     on_progress: Callable[[dict], None] | None = None,
+    level: int | None = None,
 ) -> dict:
     """Let the engine choose a move after ``moves`` and return it with the new game state.
 
+    The engine plays at play ``level`` (see ``chessbot.levels``) if one is
+    given, and otherwise at full strength for ``think_time`` seconds.
     ``on_progress`` receives a small dict after each completed search depth,
     for showing the engine's thinking as it happens.
     """
     board = _board_from(moves, fen)
     if board.is_game_over(claim_draw=True):
         raise ValueError("the game is already over")
-    think_time = min(max(float(think_time), MIN_THINK_TIME), MAX_THINK_TIME)
 
     def summary(result: SearchResult) -> dict:
         score, mate = _white_pov(result, board)
@@ -106,9 +150,75 @@ def engine_reply(
         }
 
     callback = (lambda result: on_progress(summary(result))) if on_progress else None
-    result = searcher.search(board, time_limit=think_time, on_iteration=callback)
+    if level is not None:
+        if not isinstance(level, int):
+            raise ValueError("level must be a whole number")
+        result = choose_move(board, get_level(level), searcher, on_iteration=callback)
+    else:
+        think_time = min(max(float(think_time or 1.5), MIN_THINK_TIME), MAX_THINK_TIME)
+        result = searcher.search(board, time_limit=think_time, on_iteration=callback)
     move = result.best_move
     reply = summary(result)
     reply["move"] = move.uci()
     reply["san"] = board.san(move)
     return {"reply": reply, "state": game_state([*moves, move.uci()], fen)}
+
+
+def review_move(
+    moves: list[str],
+    ply: int,
+    searcher: Searcher,
+    fen: str | None = None,
+    depth: int = REVIEW_DEPTH,
+) -> dict:
+    """Judge ``moves[ply]``: how much it lost compared with the engine's choice.
+
+    Searches the position before the move, and, if the move was not the
+    engine's choice, the position after it, one ply shallower so that both
+    scores come from the same horizon. Scores are reported from White's point
+    of view; ``loss`` is the drop in the mover's winning chances (0..2).
+    """
+    if not isinstance(ply, int) or not 0 <= ply < len(moves):
+        raise ValueError(f"ply must be between 0 and {len(moves) - 1}")
+    board = _board_from(moves[: ply + 1], fen)
+    played = board.pop()
+    mover = board.turn
+    san = board.san(played)
+
+    best = searcher.search(board, depth=depth)
+    before = best.score
+    if played == best.best_move:
+        after = before
+    else:
+        board.push(played)
+        if board.is_checkmate():
+            after = MATE_SCORE - 1
+        elif board.is_game_over(claim_draw=True):
+            after = 0
+        else:
+            after = -searcher.search(board, depth=max(depth - 1, 1)).score
+            # Mate distances were counted from the position after the move.
+            if after >= MATE_THRESHOLD:
+                after -= 1
+            elif after <= -MATE_THRESHOLD:
+                after += 1
+        board.pop()
+
+    loss = max(0.0, winning_chances(before) - winning_chances(after)) if played != best.best_move else 0.0
+    verdict = next((name for threshold, name in VERDICTS if loss >= threshold), None)
+    return {
+        "ply": ply,
+        "number": board.fullmove_number,
+        "color": "white" if mover == chess.WHITE else "black",
+        "fen": board.fen(),
+        "uci": played.uci(),
+        "san": san,
+        "best_uci": best.best_move.uci(),
+        "best_san": board.san(best.best_move),
+        "line": board.variation_san(best.pv[:4]) if best.pv else board.san(best.best_move),
+        "before": _score_dict(before, mover),
+        "after": _score_dict(after, mover),
+        "loss": round(loss, 3),
+        "accuracy": round(move_accuracy(before, after), 1),
+        "verdict": verdict,
+    }

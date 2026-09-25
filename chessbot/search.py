@@ -112,16 +112,7 @@ class Searcher:
         The caller's board is never modified.
         """
         start = time.monotonic()
-        self.board = board.copy()
-        self.nodes = 0
-        self.stop_event = stop_event
-        self.deadline = start + time_limit if time_limit is not None else None
-        self.node_limit = nodes
-        self.killers = [[None, None] for _ in range(MAX_PLY + 2)]
-        self.pv_table: list[list[chess.Move]] = [[] for _ in range(MAX_PLY + 2)]
-        self.keys = self._game_history_keys()
-        if len(self.tt) >= self.hash_entries:
-            self.tt.clear()
+        self._start(board, start + time_limit if time_limit is not None else None, nodes, stop_event)
 
         legal_moves = list(self.board.legal_moves)
         if not legal_moves:
@@ -168,7 +159,55 @@ class Searcher:
         result.elapsed = time.monotonic() - start
         return result
 
+    def rank_moves(
+        self, board: chess.Board, depth: int, margin: int, max_nodes: int = 5_000
+    ) -> list[tuple[chess.Move, int]]:
+        """Score the legal moves that are within ``margin`` centipawns of the best one, best first.
+
+        Each move gets its own search to ``depth`` plies, so the scores are
+        comparable; moves that turn out worse than best - margin are left out.
+        Moves are tried in the usual move-ordering sequence, and once about
+        ``max_nodes`` positions have been searched the rest are skipped, which
+        keeps sharp positions (where capture sequences run long) quick. This is
+        how the weaker play levels find good-but-not-best moves to choose from.
+        """
+        best = self.search(board, depth=depth)
+        if best.best_move is None:
+            return []
+        floor = best.score - margin
+        scored = [(best.best_move, best.score)]
+        moves = self._order_moves(list(self.board.legal_moves), best.best_move, 0)
+        self.node_limit = self.nodes + max_nodes
+        self.can_abort = True
+        for move in moves[1:]:
+            # A window from the floor to just above the best score keeps the
+            # capture search small; a move that fails high is as good as the best.
+            self._push(move)
+            try:
+                score = -self._negamax(depth - 1, -(best.score + 1), -floor, 1)
+            except SearchAborted:
+                break
+            finally:
+                self._pop()
+            if score > floor:
+                scored.append((move, min(score, best.score)))
+        scored.sort(key=lambda item: item[1], reverse=True)
+        return scored
+
     # ------------------------------------------------------------- internals
+
+    def _start(self, board: chess.Board, deadline, nodes, stop_event) -> None:
+        """Reset the per-search state for a new search of ``board``."""
+        self.board = board.copy()
+        self.nodes = 0
+        self.stop_event = stop_event
+        self.deadline = deadline
+        self.node_limit = nodes
+        self.killers = [[None, None] for _ in range(MAX_PLY + 2)]
+        self.pv_table: list[list[chess.Move]] = [[] for _ in range(MAX_PLY + 2)]
+        self.keys = self._game_history_keys()
+        if len(self.tt) >= self.hash_entries:
+            self.tt.clear()
 
     def _game_history_keys(self) -> list[int]:
         """Position keys since the last capture or pawn move, oldest first, for repetition detection."""

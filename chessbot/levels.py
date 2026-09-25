@@ -1,0 +1,89 @@
+"""Play levels: weaker versions of the engine, each with an estimated rating.
+
+The four lower levels score the reasonable moves with a shallow search and
+pick one at random, favouring better moves: the higher the ``temperature``
+(in centipawns), the more often a weaker move gets picked. On top of that
+the lowest levels sometimes play a random legal move (``blunder_rate``),
+which is how they end up hanging pieces the way beginners do.
+
+The two upper levels use the full search, capped by a node count rather than
+a time limit so that they play just as well in a slow browser as natively.
+
+The Elo figures come from matches against Stockfish 16 with
+``UCI_LimitStrength`` and between neighbouring levels (see
+``scripts/calibrate_levels.py``). Treat them as rough: a few dozen games per
+level, on Stockfish's rating scale, which is not the same as any online site's.
+"""
+
+from __future__ import annotations
+
+import math
+import random
+import time
+from dataclasses import dataclass
+
+import chess
+
+from .search import Searcher, SearchResult
+
+
+@dataclass(frozen=True)
+class Level:
+    number: int
+    name: str
+    elo: int
+    rank_depth: int | None = None  # lower levels: depth for rank_moves
+    temperature: float = 0.0  # lower levels: centipawns of randomness
+    blunder_rate: float = 0.0  # lower levels: chance of a random legal move
+    nodes: int | None = None  # upper levels: search node budget
+
+    def as_dict(self) -> dict:
+        return {"level": self.number, "name": self.name, "elo": self.elo}
+
+
+LEVELS = [
+    Level(1, "Beginner", 700, rank_depth=1, temperature=150, blunder_rate=0.2),
+    Level(2, "Novice", 900, rank_depth=1, temperature=80, blunder_rate=0.08),
+    Level(3, "Casual", 1100, rank_depth=2, temperature=50, blunder_rate=0.03),
+    Level(4, "Club", 1300, rank_depth=2, temperature=20),
+    Level(5, "Strong", 1500, nodes=12_000),
+    Level(6, "Expert", 1700, nodes=40_000),
+]
+DEFAULT_LEVEL = 3
+
+
+def get_level(number: int) -> Level:
+    for level in LEVELS:
+        if level.number == number:
+            return level
+    raise ValueError(f"no level {number!r}; choose 1 to {len(LEVELS)}")
+
+
+def choose_move(
+    board: chess.Board,
+    level: Level,
+    searcher: Searcher,
+    rng: random.Random | None = None,
+    on_iteration=None,
+) -> SearchResult:
+    """Pick a move for ``board`` at ``level``. The result's score is the chosen move's."""
+    if level.nodes is not None:
+        return searcher.search(board, nodes=level.nodes, on_iteration=on_iteration)
+
+    rng = rng or random.Random()
+    start = time.monotonic()
+    if level.blunder_rate and rng.random() < level.blunder_rate:
+        move = rng.choice(list(board.legal_moves))
+        return SearchResult(move, 0, 0, 0, time.monotonic() - start, [move])
+    # Moves far worse than the best are almost never picked (five
+    # "temperatures" is under 1%), so don't spend time scoring them exactly.
+    ranked = searcher.rank_moves(board, level.rank_depth, margin=int(min(5 * level.temperature, 400)))
+    if not ranked:
+        return searcher.search(board, depth=1)
+    best_score = ranked[0][1]
+    weights = [math.exp((score - best_score) / level.temperature) for _, score in ranked]
+    move, score = rng.choices(ranked, weights=weights)[0]
+    result = SearchResult(move, score, level.rank_depth, searcher.nodes, time.monotonic() - start, [move])
+    if on_iteration:
+        on_iteration(result)
+    return result

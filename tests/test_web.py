@@ -7,8 +7,8 @@ import chess
 import pytest
 
 from chessbot.search import Searcher
-from chessbot.server import ChessBotServer, pieces_js
-from chessbot.webapi import engine_reply, game_state
+from chessbot.server import ChessBotServer, config_js, pieces_js
+from chessbot.webapi import engine_reply, game_state, move_accuracy, review_move, winning_chances
 
 
 def test_initial_state():
@@ -151,11 +151,84 @@ def test_build_site(tmp_path, capsys):
         "pieces.js",
         "pyodide-backend.js",
         "python.json",
+        "config.js",
+        "lessons.json",
         ".nojekyll",
     }
     page = (site / "index.html").read_text()
     assert page.index("pyodide-backend.js") < page.index('src="app.js"')
     assert "running in your browser with Pyodide" in page
     sources = json.loads((site / "python.json").read_text())
-    assert {"chessbot/search.py", "chessbot/webapi.py", "chess/__init__.py", "chess/pgn.py"} <= set(sources)
+    assert {"chessbot/search.py", "chessbot/levels.py", "chessbot/webapi.py", "chess/__init__.py"} <= set(sources)
     assert "class Searcher" in sources["chessbot/search.py"]
+
+
+def test_review_flags_a_blunder():
+    # 3...Nf6?? allows Qxf7#.
+    moves = ["e2e4", "e7e5", "d1h5", "b8c6", "f1c4", "g8f6", "h5f7"]
+    review = review_move(moves, 5, Searcher())
+    assert review["san"] == "Nf6"
+    assert review["color"] == "black"
+    assert review["number"] == 3
+    assert review["verdict"] == "blunder"
+    assert review["best_san"] != "Nf6"
+    assert review["after"]["mate"] == 1  # White mates in one after it
+    assert review["accuracy"] < 20
+    assert review["fen"] == game_state(moves[:5])["fen"]
+
+
+def test_review_of_the_best_move_loses_nothing():
+    review = review_move(["e2e4", "e7e5", "d1h5", "b8c6", "f1c4", "g8f6", "h5f7"], 6, Searcher())
+    assert review["san"] == "Qxf7#"
+    assert review["loss"] == 0
+    assert review["accuracy"] == 100
+    assert review["verdict"] is None
+
+
+@pytest.mark.parametrize("ply", [-1, 2, "0"])
+def test_review_rejects_bad_plies(ply):
+    with pytest.raises(ValueError):
+        review_move(["e2e4", "e7e5"], ply, Searcher())
+
+
+def test_winning_chances_and_accuracy():
+    assert winning_chances(0) == 0
+    assert winning_chances(100_000) == 1
+    assert winning_chances(-100_000) == -1
+    assert 0.3 < winning_chances(300) < 0.6
+    assert move_accuracy(50, 50) == 100
+    assert move_accuracy(0, -900) < 20
+
+
+def test_state_from_a_fen():
+    fen = "6k1/5ppp/8/8/8/8/8/R5K1 w - - 0 1"
+    state = game_state(["a1a8"], fen=fen)
+    assert state["over"] and state["reason"] == "checkmate"
+
+
+def test_serves_config_and_lessons(server):
+    status, _, body = request(server + "/config.js")
+    assert status == 200
+    config = json.loads(body.decode().split("=", 1)[1].strip().rstrip(";"))
+    assert [level["level"] for level in config["levels"]] == [1, 2, 3, 4, 5, 6]
+    assert config["stats"] is None
+    status, content_type, body = request(server + "/lessons.json")
+    assert status == 200 and content_type == "application/json"
+    assert json.loads(body)[0]["id"] == "pieces"
+
+
+def test_config_names_the_stats_database(monkeypatch):
+    monkeypatch.setenv("CHESSBOT_STATS_URL", "https://example.supabase.co/")
+    monkeypatch.setenv("CHESSBOT_STATS_KEY", "sb_publishable_abc")
+    config = json.loads(config_js().split("=", 1)[1].strip().rstrip(";"))
+    assert config["stats"] == {"url": "https://example.supabase.co", "key": "sb_publishable_abc"}
+
+
+def test_api_move_at_a_level_and_review(server):
+    status, _, body = request(server + "/api/move", {"moves": ["e2e4"], "level": 1})
+    assert status == 200
+    reply = json.loads(body)["reply"]
+    status, _, body = request(server + "/api/review", {"moves": ["e2e4", reply["move"]], "ply": 0})
+    assert status == 200
+    assert json.loads(body)["san"] == "e4"
+    assert request(server + "/api/move", {"moves": [], "level": 42})[0] == 400

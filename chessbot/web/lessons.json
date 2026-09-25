@@ -1,0 +1,177 @@
+[
+  {
+    "id": "pieces",
+    "title": "The pieces and what they're worth",
+    "summary": "How each piece moves, and how to judge a trade.",
+    "body": [
+      "Pawns move straight forward one square, or two from their starting square, and capture one square diagonally forward. Knights jump in an L: two squares one way and one to the side, hopping over anything in between. Bishops move diagonally, rooks move in straight lines, and the queen can do both. The king moves one square in any direction.",
+      "Players count material with these values: pawn 1, knight 3, bishop 3, rook 5, queen 9. The king has no value, because losing it loses the game.",
+      "Before you capture, ask what you get and what you give back. Taking a pawn with your knight is only good if the knight can't be taken in return."
+    ],
+    "puzzle": {
+      "fen": "4k3/8/3p4/4p1b1/8/5N2/8/4K3 w - - 0 1",
+      "goal": "Your knight can capture two things. Pick the capture that doesn't lose the knight.",
+      "solution": ["f3g5"],
+      "hint": "The pawn on e5 is protected by the pawn on d6.",
+      "explain": "Nxg5 wins a bishop (3 points) for free. Nxe5 would win a pawn but lose the knight to dxe5."
+    }
+  },
+  {
+    "id": "opening",
+    "title": "Opening principles",
+    "summary": "Take the center, develop your pieces, castle.",
+    "body": [
+      "The first few moves set up the whole game. Aim for three things: put a pawn or two in the center (e4, d4, e5, d5), bring out your knights and bishops, and castle to tuck your king away.",
+      "Try not to move the same piece twice or bring your queen out early. A queen in the middle of the board gets chased around by smaller pieces, and every move spent running away is a move your opponent spends developing."
+    ],
+    "puzzle": {
+      "fen": "r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3",
+      "goal": "White to move. Play a move that develops a piece or fights for the center.",
+      "accept": ["f1c4", "f1b5", "b1c3", "d2d4"],
+      "hint": "Your bishop on f1 and knight on b1 haven't moved yet.",
+      "explain": "Bc4, Bb5, Nc3 and d4 are all good. Each one brings a piece into play or fights for the center."
+    }
+  },
+  {
+    "id": "blunder-check",
+    "title": "Checks, captures, threats",
+    "summary": "The two-second habit that saves most games.",
+    "body": [
+      "Most games between newer players are decided by a piece left hanging or a threat nobody noticed. Before every move, look at the board from your opponent's side and ask what checks, captures and threats they have.",
+      "Then check your own move the same way: once it's played, can they take something for free?"
+    ],
+    "puzzle": {
+      "fen": "r1bqkbnr/pppp1ppp/2n5/4p2Q/2B1P3/8/PPPP1PPP/RNB1K1NR b KQkq - 3 3",
+      "goal": "Black to move. White threatens Qxf7, which is checkmate. Stop it.",
+      "accept": ["g7g6", "d8e7", "d8f6", "g8h6"],
+      "hint": "The f7 pawn is attacked by the queen and the bishop, and only your king defends it.",
+      "explain": "g6 blocks the queen and chases it away. Qe7, Qf6 and Nh6 add a defender to f7. A natural-looking move like Nf6 would lose at once to Qxf7#."
+    }
+  },
+  {
+    "id": "fork",
+    "title": "Forks",
+    "summary": "Attack two things at once.",
+    "body": [
+      "A fork is one piece attacking two things at once. Your opponent can only save one of them.",
+      "Knights make the best forks because their jumps are easy to miss. A knight fork that also gives check usually wins something, because the king has to move first."
+    ],
+    "puzzle": {
+      "fen": "r3k3/6pp/8/1N6/8/8/6PP/4K3 w - - 0 1",
+      "goal": "White to move. Win the rook.",
+      "solution": ["b5c7", "e8d7", "c7a8"],
+      "hint": "Find a knight move that checks the king and attacks the rook at the same time.",
+      "explain": "Nc7+ forks the king on e8 and the rook on a8. Black has to move the king, and the knight takes the rook."
+    }
+  },
+  {
+    "id": "pin",
+    "title": "Pins",
+    "summary": "A piece that can't move is a target.",
+    "body": [
+      "A pin is an attack on a piece that can't move out of the way, because something more valuable stands behind it. When the king is behind it, the pinned piece can't legally move at all.",
+      "Once a piece is pinned, attack it again, ideally with a pawn."
+    ],
+    "puzzle": {
+      "fen": "4k3/1p5p/2n5/1B6/3P4/8/7P/4K3 w - - 0 1",
+      "goal": "White to move. The knight on c6 is pinned to its king. Win it.",
+      "solution": ["d4d5"],
+      "hint": "Attack the pinned knight with your cheapest piece.",
+      "explain": "d5 attacks the knight, and it can't move away because that would expose the king to the bishop. Black loses a knight for a pawn."
+    }
+  },
+  {
+    "id": "skewer",
+    "title": "Skewers",
+    "summary": "Attack a big piece, win the one behind it.",
+    "body": [
+      "A skewer is a pin in reverse: you attack a valuable piece, it moves out of the way, and you capture what was standing behind it.",
+      "Only bishops, rooks and queens can skewer, because the attack has to travel along a line."
+    ],
+    "puzzle": {
+      "fen": "7q/p7/8/8/3k4/8/6PP/2B3K1 w - - 0 1",
+      "goal": "White to move. Win the queen.",
+      "solution": ["c1b2", "d4c4", "b2h8"],
+      "hint": "The king and queen are on the same diagonal.",
+      "explain": "Bb2+ checks the king along the long diagonal. The king has to step off it, and Bxh8 takes the queen."
+    }
+  },
+  {
+    "id": "discovered",
+    "title": "Discovered attacks",
+    "summary": "Move one piece to unleash another.",
+    "body": [
+      "When a piece moves out of the way, it can uncover an attack by the piece behind it.",
+      "If the uncovered attack is a check, the piece that moved can go almost anywhere and threaten something, because your opponent has to deal with the check first."
+    ],
+    "puzzle": {
+      "fen": "3qk3/5ppp/8/4N3/8/8/5PPP/4R1K1 w - - 0 1",
+      "goal": "White to move. Win the queen.",
+      "solution": ["e5c6", "e8f8", "c6d8"],
+      "hint": "Move the knight off the e-file so the rook gives check, and make the knight attack something as it goes.",
+      "explain": "Nc6+ uncovers a check from the rook and attacks the queen at the same time. Black has to answer the check, and White takes the queen."
+    }
+  },
+  {
+    "id": "back-rank",
+    "title": "The back-rank mate",
+    "summary": "When your own pawns trap your king.",
+    "body": [
+      "A castled king behind three pawns is safe from most attacks, but it can get trapped on its back rank. A rook or queen that lands there gives checkmate.",
+      "Once the opening is over, give your king an escape square, for example by pushing the h-pawn one square."
+    ],
+    "puzzle": {
+      "fen": "6k1/5ppp/8/8/8/8/5PPP/R5K1 w - - 0 1",
+      "goal": "White to move. Checkmate in one.",
+      "mate": true,
+      "solution": ["a1a8"],
+      "hint": "Black's king is boxed in by its own pawns.",
+      "explain": "Ra8# is checkmate: the king can't step forward because its own pawns are in the way."
+    }
+  },
+  {
+    "id": "two-rooks",
+    "title": "Checkmate with two rooks",
+    "summary": "The ladder mate.",
+    "body": [
+      "Two rooks can checkmate a lone king without any help. One rook cuts off a rank, the other gives check on the next one, and they take turns pushing the king to the edge like climbing a ladder."
+    ],
+    "puzzle": {
+      "fen": "k7/7R/8/8/8/8/8/6RK w - - 0 1",
+      "goal": "White to move. Checkmate in one.",
+      "mate": true,
+      "solution": ["g1g8"],
+      "hint": "The rook on h7 already stops the king from leaving the back rank.",
+      "explain": "Rg8# checks along the eighth rank while the rook on h7 guards the seventh, so the king has nowhere to go."
+    }
+  },
+  {
+    "id": "queen-mate",
+    "title": "Checkmate with king and queen",
+    "summary": "Finish the game, and don't stalemate.",
+    "body": [
+      "With a queen and king against a lone king, use the queen to push the enemy king to the edge of the board, staying a knight's move away from it. Then walk your own king up to help deliver mate.",
+      "Watch out for stalemate: if the lone king has no legal moves but isn't in check, the game is a draw."
+    ],
+    "puzzle": {
+      "fen": "7k/8/6K1/8/8/8/8/5Q2 w - - 0 1",
+      "goal": "White to move. Checkmate in one.",
+      "mate": true,
+      "solution": ["f1f8"],
+      "hint": "Your king already covers g7 and h7.",
+      "explain": "Qf8# checks along the back rank while your king covers the squares in front of Black's king."
+    }
+  },
+  {
+    "id": "keep-improving",
+    "title": "How to keep improving",
+    "summary": "Habits that make you better over time.",
+    "body": [
+      "Take your time. Most improvement comes from looking for checks, captures and threats on every move, not from memorizing openings.",
+      "Review your games. When a game ends here, the review lists your biggest mistakes and what you should have played instead. Try to see why the better move is better.",
+      "Solve a few puzzles every day. Spotting forks, pins and skewers quickly is a skill that grows with practice.",
+      "Learn the basic endgames, starting with king and queen against king. Plenty of won games are thrown away at the end.",
+      "Move up a level when you start winning. Your estimated rating on the Stats page shows how you're progressing."
+    ]
+  }
+]

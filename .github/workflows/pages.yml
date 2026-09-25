@@ -30,6 +30,11 @@ jobs:
         with:
           python-version: "3.12"
       - name: Build
+        env:
+          # Optional: a Supabase project for shared player stats (see README).
+          # Set these as repository variables under Settings -> Secrets and variables -> Actions.
+          CHESSBOT_STATS_URL: ${{ vars.CHESSBOT_STATS_URL }}
+          CHESSBOT_STATS_KEY: ${{ vars.CHESSBOT_STATS_KEY }}
         run: |
           pip install .
           chessbot build-site _site

@@ -13,15 +13,18 @@
     const BRIDGE = [
       "import json",
       "from chessbot.search import Searcher",
-      "from chessbot.webapi import engine_reply, game_state",
+      "from chessbot.webapi import engine_reply, game_state, review_move",
       "_searcher = Searcher()",
       "def _call(method, params_json, progress):",
       "    params = json.loads(params_json)",
       "    if method == 'state':",
-      "        return json.dumps(game_state(params['moves']))",
+      "        return json.dumps(game_state(params['moves'], params.get('fen')))",
       "    if method == 'move':",
       "        report = lambda info: progress(json.dumps(info))",
-      "        return json.dumps(engine_reply(params['moves'], params['seconds'], _searcher, on_progress=report))",
+      "        reply = engine_reply(params['moves'], None, _searcher, on_progress=report, level=params['level'])",
+      "        return json.dumps(reply)",
+      "    if method == 'review':",
+      "        return json.dumps(review_move(params['moves'], params['ply'], _searcher))",
       "    raise ValueError('unknown method ' + method)",
       "_call",
     ].join("\n");
@@ -142,7 +145,8 @@
     });
   }
 
-  backend.state = (moves) => call("state", { moves });
-  backend.move = (moves, seconds, onProgress) => call("move", { moves, seconds }, onProgress);
+  backend.state = (moves, fen) => call("state", { moves, fen: fen || null });
+  backend.move = (moves, level, onProgress) => call("move", { moves, level }, onProgress);
+  backend.review = (moves, ply) => call("review", { moves, ply });
   window.chessbotBackend = backend;
 })();

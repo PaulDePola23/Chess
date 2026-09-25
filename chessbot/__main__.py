@@ -42,6 +42,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     site_parser = commands.add_parser("build-site", help="build a static site that runs the engine in the browser")
     site_parser.add_argument("out", nargs="?", default="_site", help="output folder (default: _site)")
+    site_parser.add_argument("--stats-url", help="Supabase project URL for shared stats (or CHESSBOT_STATS_URL)")
+    site_parser.add_argument("--stats-key", help="Supabase anon/publishable key (or CHESSBOT_STATS_KEY)")
 
     analyse_parser = commands.add_parser("analyse", aliases=["analyze"], help="print the best move for a position")
     analyse_parser.add_argument("fen", nargs="?", default=chess.STARTING_FEN, help="position in FEN")
@@ -94,7 +96,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "build-site":
         from .site import build_site
 
-        print(f"Built the site in {build_site(args.out)}/")
+        print(f"Built the site in {build_site(args.out, args.stats_url, args.stats_key)}/")
         return 0
     return analyse(args.fen, args.time, args.depth)
 

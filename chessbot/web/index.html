@@ -14,11 +14,19 @@
 <!-- app:start -->
 <div class="app">
   <header class="masthead">
-    <h1 class="wordmark">ChessBot</h1>
-    <p class="spec">negamax · alpha-beta · PVS · hash table · quiescence · ~1600 Elo</p>
+    <div class="brand">
+      <h1 class="wordmark">ChessBot</h1>
+      <p class="spec">negamax · alpha-beta · PVS · hash table · quiescence</p>
+    </div>
+    <nav class="tabs" aria-label="Sections">
+      <a href="#play" data-tab="play">Play</a>
+      <a href="#learn" data-tab="learn">Learn</a>
+      <a href="#stats" data-tab="stats">Stats</a>
+    </nav>
   </header>
 
-  <main class="layout">
+  <!-- Play -->
+  <main class="layout" id="view-play" data-view="play">
     <section class="board-area" aria-label="Game">
       <div class="player" id="player-top">
         <span class="player-name"></span>
@@ -28,13 +36,15 @@
         <div class="evalbar" id="evalbar" title="Engine evaluation">
           <div class="evalbar-fill" id="evalbar-fill"></div>
         </div>
-        <div class="board-wrap">
+        <div class="board-wrap" id="board-wrap">
           <div class="board" id="board" aria-label="Chess board. You can also type moves in the box next to it."></div>
-          <div class="board-note" id="board-note" hidden></div>
-          <div class="promotion" id="promotion" hidden>
+          <div class="board-note" id="board-note" hidden>
+            <p id="board-note-text"></p>
+          </div>
+          <div class="promotion" hidden>
             <div class="promotion-card" role="dialog" aria-label="Choose a piece to promote to">
               <p>Promote to</p>
-              <div class="promotion-choices" id="promotion-choices"></div>
+              <div class="promotion-choices"></div>
             </div>
           </div>
         </div>
@@ -75,26 +85,162 @@
       </div>
 
       <div class="controls">
+        <div class="field">
+          <label for="player-name">Your name</label>
+          <input id="player-name" maxlength="24" placeholder="Shown on the Stats page" autocomplete="nickname" spellcheck="false">
+        </div>
+        <fieldset class="level-picker">
+          <legend>Opponent</legend>
+          <div class="levels" id="levels"></div>
+        </fieldset>
         <fieldset class="segmented">
           <legend>Play as</legend>
           <label><input type="radio" name="color" id="color-white" value="white" checked><span>White</span></label>
           <label><input type="radio" name="color" id="color-black" value="black"><span>Black</span></label>
         </fieldset>
-        <fieldset class="segmented">
-          <legend>Thinking time</legend>
-          <label><input type="radio" name="strength" id="strength-quick" value="quick"><span>0.5 s</span></label>
-          <label><input type="radio" name="strength" id="strength-club" value="club" checked><span>1.5 s</span></label>
-          <label><input type="radio" name="strength" id="strength-strong" value="strong"><span>4 s</span></label>
-        </fieldset>
+        <button type="button" class="primary" id="new-game">New game</button>
+        <p class="game-note" id="game-note"></p>
         <div class="buttons">
-          <button type="button" class="primary" id="new-game">New game</button>
           <button type="button" id="undo">Take back</button>
+          <button type="button" id="resign">Resign</button>
           <button type="button" id="flip">Flip board</button>
           <button type="button" id="copy-pgn">Copy PGN</button>
         </div>
         <textarea class="pgn" id="pgn" readonly hidden aria-label="Game in PGN format"></textarea>
       </div>
     </aside>
+
+    <aside class="review" id="review" hidden aria-labelledby="review-title">
+      <h2 id="review-title">Game review</h2>
+      <div id="review-progress" class="review-progress" hidden>
+        <p id="review-progress-text">Reviewing your moves…</p>
+        <div class="meter"><div class="meter-fill" id="review-meter"></div></div>
+      </div>
+      <div id="review-summary" hidden>
+        <div class="review-score">
+          <span class="review-accuracy" id="review-accuracy">–</span>
+          <span class="review-accuracy-label">accuracy</span>
+        </div>
+        <ul class="verdict-counts" id="review-counts"></ul>
+        <h3 id="review-list-title">Biggest mistakes</h3>
+        <p class="review-viewing" id="review-viewing" hidden>
+          <span id="review-viewing-text"></span>
+          <button type="button" id="review-back">Back to the final position</button>
+        </p>
+        <ol class="mistakes" id="review-list"></ol>
+        <p class="review-empty" id="review-empty" hidden>No mistakes found. Well played.</p>
+      </div>
+      <p class="review-error" id="review-error" hidden></p>
+    </aside>
+  </main>
+
+  <!-- Learn -->
+  <main class="learn" id="view-learn" data-view="learn" hidden>
+    <nav class="lesson-list" aria-label="Lessons">
+      <h2>Lessons</h2>
+      <ol id="lesson-list"></ol>
+    </nav>
+    <article class="lesson" id="lesson">
+      <h2 id="lesson-title"></h2>
+      <div class="lesson-body" id="lesson-body"></div>
+      <section class="puzzle" id="puzzle" hidden aria-label="Puzzle">
+        <div class="board-wrap puzzle-board" id="puzzle-wrap">
+          <div class="board" id="puzzle-board" aria-label="Puzzle board"></div>
+          <div class="promotion" hidden>
+            <div class="promotion-card" role="dialog" aria-label="Choose a piece to promote to">
+              <p>Promote to</p>
+              <div class="promotion-choices"></div>
+            </div>
+          </div>
+        </div>
+        <div class="puzzle-side">
+          <p class="puzzle-goal" id="puzzle-goal"></p>
+          <p class="puzzle-feedback" id="puzzle-feedback" aria-live="polite"></p>
+          <div class="puzzle-buttons">
+            <button type="button" id="puzzle-hint">Hint</button>
+            <button type="button" id="puzzle-answer">Show answer</button>
+            <button type="button" id="puzzle-reset">Start over</button>
+          </div>
+        </div>
+      </section>
+      <div class="lesson-nav">
+        <button type="button" id="lesson-prev">Previous lesson</button>
+        <button type="button" class="primary" id="lesson-next">Next lesson</button>
+      </div>
+    </article>
+  </main>
+
+  <!-- Stats -->
+  <main class="stats" id="view-stats" data-view="stats" hidden>
+    <div class="stats-head">
+      <div>
+        <h2 id="stats-title">Players</h2>
+        <p class="stats-source" id="stats-source"></p>
+      </div>
+      <button type="button" id="stats-refresh">Refresh</button>
+    </div>
+    <p class="stats-message" id="stats-message" hidden></p>
+
+    <div id="stats-overview">
+      <dl class="tiles" id="stats-tiles"></dl>
+      <div class="table-wrap">
+        <table class="data-table" id="leaderboard">
+          <thead>
+            <tr>
+              <th scope="col" class="num">#</th>
+              <th scope="col">Player</th>
+              <th scope="col" class="num">Rating</th>
+              <th scope="col" class="num">Games</th>
+              <th scope="col" class="num">W–D–L</th>
+              <th scope="col" class="num">Score</th>
+              <th scope="col" class="num">Accuracy</th>
+              <th scope="col">Best win</th>
+              <th scope="col">Last played</th>
+            </tr>
+          </thead>
+          <tbody id="leaderboard-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div id="stats-player" hidden>
+      <button type="button" id="stats-back">All players</button>
+      <h3 class="player-title" id="player-title"></h3>
+      <dl class="tiles" id="player-tiles"></dl>
+      <h4>By level</h4>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th scope="col">Level</th>
+              <th scope="col" class="num">Games</th>
+              <th scope="col" class="num">W–D–L</th>
+              <th scope="col" class="num">Score</th>
+              <th scope="col" class="num">Accuracy</th>
+            </tr>
+          </thead>
+          <tbody id="player-levels"></tbody>
+        </table>
+      </div>
+      <h4>Recent games</h4>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th scope="col">Date</th>
+              <th scope="col">Opponent</th>
+              <th scope="col">Color</th>
+              <th scope="col">Result</th>
+              <th scope="col" class="num">Moves</th>
+              <th scope="col" class="num">Accuracy</th>
+              <th scope="col" class="num">Blunders</th>
+            </tr>
+          </thead>
+          <tbody id="player-games"></tbody>
+        </table>
+      </div>
+    </div>
+    <p class="stats-footnote">Ratings are estimated from results against the bot's levels: the average rating of the levels you played, plus 400 × (wins − losses) ÷ games. Games where you took back a move don't count. A <span class="provisional">?</span> means fewer than 5 rated games.</p>
   </main>
 
   <footer class="footer">
@@ -102,6 +248,7 @@
   </footer>
 </div>
 <!-- app:end -->
+<script src="config.js"></script>
 <script src="pieces.js"></script>
 <script src="app.js"></script>
 </body>

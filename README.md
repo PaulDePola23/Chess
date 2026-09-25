@@ -8,6 +8,8 @@ You can play it in the terminal or in your browser, ask it to analyse a
 position, or plug it into any chess GUI or bot framework that speaks the UCI
 protocol.
 
+**Play it online: https://pauldepola23.github.io/testing-/**
+
 ## Quick start
 
 Requires Python 3.10+.
@@ -34,13 +36,23 @@ symbols well.
 chessbot serve --open    # or open http://localhost:8000 yourself
 ```
 
-The page shows a board you can click or drag on, the engine's evaluation
-and search depth as it thinks, a move list, and buttons to take back moves,
-flip the board, change the thinking time and copy the game as PGN. You can
-also type moves in the box next to the board. The engine runs on your
-machine, in Python. The server uses only the standard library and listens
-on `127.0.0.1`, so only your computer can reach it (use `--host 0.0.0.0` to
-play from another device on your network).
+The page has three tabs:
+
+- **Play**: a board you can click or drag on (or type moves), six opponent
+  levels from Beginner (about 700) to Expert (about 1700), the engine's
+  evaluation as it thinks, and buttons to take back a move, resign, flip the
+  board and copy the game as PGN. When a game ends, a review lists your
+  biggest mistakes with the move you should have played; click one to see
+  it on the board.
+- **Learn**: eleven short lessons for newer players (piece values, opening
+  principles, checks-captures-threats, forks, pins, skewers, discovered
+  attacks and basic mates), each with a puzzle to solve on the board.
+- **Stats**: a leaderboard of everyone who entered a name, ranked by an
+  estimated rating, with each player's record, accuracy and recent games.
+
+The engine runs on your machine, in Python. The server uses only the
+standard library and listens on `127.0.0.1`, so only your computer can reach
+it (use `--host 0.0.0.0` to play from another device on your network).
 
 ### Online, with no install
 
@@ -55,6 +67,42 @@ publishes it with GitHub Pages on every push to the default branch, at
 `https://<user>.github.io/<repo>/`. To switch it on once, open the repo's
 **Settings → Pages** and set **Source** to **GitHub Actions** (Pages on a
 private repo needs a paid GitHub plan), then re-run the workflow.
+
+### Levels and ratings
+
+The four lower levels score the reasonable moves with a shallow search and
+pick one at random, favouring the better ones; the two lowest also play a
+random move now and then, which is how they hang pieces the way beginners
+do. The two upper levels use the full search with a fixed node budget, so
+they play equally well in the browser and natively. The Elo shown for each
+level was measured with `scripts/calibrate_levels.py`, which plays the levels
+against each other and against Stockfish 16 at fixed `UCI_Elo` settings. The
+numbers are rough (20 games per pairing) and on Stockfish's rating scale,
+which doesn't match any online site exactly.
+
+A player's estimated rating is the average rating of the levels they played
+plus 400 × (wins − losses) ÷ games, the usual "performance rating" formula.
+Games where they took back a move don't count towards it.
+
+### Shared stats
+
+Out of the box, stats are kept in each visitor's browser. To share them
+between everyone who visits the site, connect a free
+[Supabase](https://supabase.com) project:
+
+1. Create a project, open **SQL Editor**, and run [`supabase/games.sql`](supabase/games.sql).
+   It creates a `games` table that anyone can read and add to, but not change.
+2. From the project's **API** settings, copy the **Project URL** and the public
+   **anon** (or **publishable**) key. Both are meant to be public; never use the
+   secret or `service_role` key.
+3. In this repo, open **Settings → Secrets and variables → Actions → Variables** and
+   add `CHESSBOT_STATS_URL` and `CHESSBOT_STATS_KEY` with those values, then re-run
+   the **Website** workflow.
+
+For `chessbot serve` or `chessbot build-site`, set the same two environment
+variables (or pass `--stats-url` and `--stats-key` to `build-site`). Names
+and results are public, and because the site has no logins, anyone could
+submit made-up results.
 
 ### Analysing a position
 
@@ -103,8 +151,9 @@ from the opening.
 | [`chessbot/evaluation.py`](chessbot/evaluation.py) | Scores a position: material plus piece-square tables, blended between middlegame and endgame by how much material is left. It also knows a bishop-pair bonus, which material counts are dead draws, and how to push a lone king to the edge to mate it. |
 | [`chessbot/search.py`](chessbot/search.py) | Chooses the move. Iterative-deepening alpha-beta (negamax with PVS), a transposition table, quiescence search, MVV-LVA / killer / history move ordering, null-move pruning, late-move reductions, check extensions, mate-distance scoring, and repetition and fifty-move draw detection. |
 | [`chessbot/uci.py`](chessbot/uci.py) | The UCI protocol. The search runs on its own thread so `stop` and `isready` get answered while it is thinking. |
+| [`chessbot/levels.py`](chessbot/levels.py) | The six play levels and how the weaker ones choose their moves. |
 | [`chessbot/play.py`](chessbot/play.py) | The terminal game. |
-| [`chessbot/webapi.py`](chessbot/webapi.py), [`chessbot/server.py`](chessbot/server.py), [`chessbot/web/`](chessbot/web) | The browser game. The page keeps the game as a list of moves and asks a backend for legal moves, notation and the engine's reply, so all chess logic stays in Python. |
+| [`chessbot/webapi.py`](chessbot/webapi.py), [`chessbot/server.py`](chessbot/server.py), [`chessbot/web/`](chessbot/web) | The browser game. The page keeps the game as a list of moves and asks a backend for legal moves, notation, the engine's reply and the post-game review, so all chess logic stays in Python. Lessons live in `chessbot/web/lessons.json`; `tests/test_lessons.py` checks every puzzle with the engine. |
 | [`chessbot/site.py`](chessbot/site.py), [`chessbot/web/pyodide-backend.js`](chessbot/web/pyodide-backend.js) | The static site: the same page, answered by the engine running in a Web Worker with Pyodide instead of by the server. |
 | [`chessbot/__main__.py`](chessbot/__main__.py) | The `chessbot` command. |
 
@@ -121,7 +170,7 @@ print(result.best_move, result.score, result.depth, result.pv)
 ## Development
 
 ```bash
-pytest               # tests: mates, tactics, stalemate avoidance, perpetual check, UCI, CLI, web API
+pytest               # tests: mates, tactics, perpetual check, levels, review, lesson puzzles, UCI, CLI, web API
 ruff check .         # lint
 ruff format .        # format
 ```

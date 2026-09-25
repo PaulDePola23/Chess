@@ -3,16 +3,20 @@
     chessbot serve            then open http://127.0.0.1:8000
 
 Uses only the standard library. The page lives in ``chessbot/web``; the
-engine runs here in Python and the page talks to it through two JSON
-endpoints:
+engine runs here in Python and the page talks to it through JSON endpoints:
 
-    POST /api/state  {"moves": [...], "fen"?}                   -> game state
-    POST /api/move   {"moves": [...], "fen"?, "think_time"?}    -> engine reply + new state
+    POST /api/state   {"moves": [...], "fen"?}                  -> game state
+    POST /api/move    {"moves": [...], "fen"?, "level"?}        -> engine reply + new state
+    POST /api/review  {"moves": [...], "fen"?, "ply": n}        -> review of moves[n]
+
+Player stats go to the Supabase project named by the CHESSBOT_STATS_URL and
+CHESSBOT_STATS_KEY environment variables, or stay in the browser without them.
 """
 
 from __future__ import annotations
 
 import json
+import os
 import threading
 import webbrowser
 from http import HTTPStatus
@@ -22,14 +26,16 @@ from importlib import resources
 import chess.svg
 
 from . import __version__
+from .levels import DEFAULT_LEVEL, LEVELS
 from .search import Searcher
-from .webapi import engine_reply, game_state
+from .webapi import engine_reply, game_state, review_move
 
 STATIC_FILES = {
     "/": ("index.html", "text/html; charset=utf-8"),
     "/index.html": ("index.html", "text/html; charset=utf-8"),
     "/app.js": ("app.js", "text/javascript; charset=utf-8"),
     "/style.css": ("style.css", "text/css; charset=utf-8"),
+    "/lessons.json": ("lessons.json", "application/json"),
 }
 MAX_BODY = 1_000_000
 
@@ -41,6 +47,25 @@ def pieces_js() -> str:
     """
     pieces = {symbol: chess.svg.piece(chess.Piece.from_symbol(symbol)) for symbol in "PNBRQKpnbrqk"}
     return "window.CHESSBOT_PIECES = " + json.dumps(pieces) + ";\n"
+
+
+def config_js(stats_url: str | None = None, stats_key: str | None = None) -> str:
+    """A script defining ``window.CHESSBOT_CONFIG``, the page's settings.
+
+    It lists the play levels, and says where player stats are kept:
+    ``stats_url`` and ``stats_key`` are a Supabase project URL and its public
+    (anon or publishable) key. Without them the page keeps stats in the
+    browser. They default to the CHESSBOT_STATS_URL and CHESSBOT_STATS_KEY
+    environment variables.
+    """
+    stats_url = stats_url or os.environ.get("CHESSBOT_STATS_URL") or None
+    stats_key = stats_key or os.environ.get("CHESSBOT_STATS_KEY") or None
+    config = {
+        "levels": [level.as_dict() for level in LEVELS],
+        "defaultLevel": DEFAULT_LEVEL,
+        "stats": {"url": stats_url.rstrip("/"), "key": stats_key} if stats_url and stats_key else None,
+    }
+    return "window.CHESSBOT_CONFIG = " + json.dumps(config) + ";\n"
 
 
 def read_static(name: str) -> bytes:
@@ -82,6 +107,8 @@ class ChessBotHandler(BaseHTTPRequestHandler):
         path = self.path.split("?", 1)[0]
         if path == "/pieces.js":
             self.send_body(HTTPStatus.OK, pieces_js().encode(), "text/javascript; charset=utf-8")
+        elif path == "/config.js":
+            self.send_body(HTTPStatus.OK, config_js().encode(), "text/javascript; charset=utf-8")
         elif path in STATIC_FILES:
             name, content_type = STATIC_FILES[path]
             self.send_body(HTTPStatus.OK, read_static(name), content_type)
@@ -103,8 +130,14 @@ class ChessBotHandler(BaseHTTPRequestHandler):
                 self.send_json(HTTPStatus.OK, game_state(moves, fen))
             elif self.path == "/api/move":
                 with self.server.engine_lock:
-                    reply = engine_reply(moves, request.get("think_time", 1.5), self.server.searcher, fen)
+                    reply = engine_reply(
+                        moves, request.get("think_time"), self.server.searcher, fen, level=request.get("level")
+                    )
                 self.send_json(HTTPStatus.OK, reply)
+            elif self.path == "/api/review":
+                with self.server.engine_lock:
+                    review = review_move(moves, request.get("ply"), self.server.searcher, fen)
+                self.send_json(HTTPStatus.OK, review)
             else:
                 self.send_json(HTTPStatus.NOT_FOUND, {"error": f"no such endpoint: {self.path}"})
         except (ValueError, TypeError) as error:
