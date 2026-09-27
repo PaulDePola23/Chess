@@ -65,8 +65,12 @@ def resolve_engine(spec: str, workdir: pathlib.Path) -> dict:
         return {"name": spec, "command": [path], "cwd": None, "options": options}
     path = pathlib.Path(spec)
     if (path / "chessbot" / "__init__.py").exists():
-        tree = path.resolve()
-        name = "working tree" if tree == ROOT else str(tree)
+        source = path.resolve()
+        name = "working tree" if source == ROOT else str(source)
+        # Play a copy taken now, so editing the code during a long match can't leak into it.
+        tree = workdir / f"tree-{abs(hash(str(source))):x}"
+        if not tree.exists():
+            shutil.copytree(source / "chessbot", tree / "chessbot", ignore=shutil.ignore_patterns("__pycache__"))
     else:
         # A git revision: export it so it can run next to the working tree.
         sha = subprocess.run(
