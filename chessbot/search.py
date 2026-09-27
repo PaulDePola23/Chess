@@ -36,6 +36,23 @@ EXACT, LOWER_BOUND, UPPER_BOUND = 0, 1, 2
 # How often (in nodes) to look at the clock and the stop flag.
 CHECK_INTERVAL = 1024
 
+# Pruning near the leaves, in centipawns (a pawn is 100). Reverse futility:
+# a position this far above beta per remaining ply is cut off. Futility:
+# quiet moves that would need more than this to lift the score to alpha
+# aren't searched.
+RFP_DEPTH = 3
+RFP_MARGIN = 100
+FUTILITY_MARGINS = {1: 150, 2: 300}
+
+# Aspiration windows: from depth 4, search a window this wide around the last
+# depth's score, and widen it (doubling) only when the score falls outside.
+ASPIRATION_DEPTH = 4
+ASPIRATION_WINDOW = 40
+
+# Late move pruning: near the leaves, quiet moves this far down the move
+# ordering are rarely any good, so they aren't searched at all.
+LMP_COUNTS = {1: 6, 2: 10, 3: 16}
+
 
 class SearchAborted(Exception):
     """Raised inside the search when time is up or a stop was requested."""
@@ -133,7 +150,7 @@ class Searcher:
             self.can_abort = current_depth > 1
             self.root_best: tuple[chess.Move, int] | None = None
             try:
-                score = self._negamax(current_depth, -INFINITY, INFINITY, 0)
+                score = self._aspiration_search(current_depth, result.score)
             except SearchAborted:
                 # A move that was fully searched and beat the previous best at
                 # this depth is still better than last iteration's choice.
@@ -161,6 +178,24 @@ class Searcher:
         result.nodes = self.nodes
         result.elapsed = time.monotonic() - start
         return result
+
+    def _aspiration_search(self, depth: int, previous: int) -> int:
+        """Search the root at ``depth``, first in a narrow window around ``previous``."""
+        if depth < ASPIRATION_DEPTH or abs(previous) >= MATE_THRESHOLD:
+            return self._negamax(depth, -INFINITY, INFINITY, 0)
+        delta = ASPIRATION_WINDOW
+        alpha, beta = previous - delta, previous + delta
+        while True:
+            score = self._negamax(depth, alpha, beta, 0)
+            if score <= alpha:
+                alpha = max(-INFINITY, alpha - delta)
+            elif score >= beta:
+                beta = min(INFINITY, beta + delta)
+            else:
+                return score
+            delta *= 2
+            if delta > 1000:
+                alpha, beta = -INFINITY, INFINITY
 
     def rank_moves(
         self, board: chess.Board, depth: int, margin: int, max_nodes: int = 5_000
@@ -233,6 +268,15 @@ class Searcher:
                 return True
         return False
 
+    def _count_node(self) -> None:
+        # The node budget is exact (play levels are node budgets); the clock
+        # and the stop flag are only looked at every CHECK_INTERVAL nodes.
+        self.nodes += 1
+        if self.node_limit is not None and self.nodes > self.node_limit and self.can_abort:
+            raise SearchAborted
+        if self.nodes % CHECK_INTERVAL == 0:
+            self._check_limits()
+
     def _check_limits(self) -> None:
         if not self.can_abort:
             return
@@ -275,9 +319,7 @@ class Searcher:
         return moves
 
     def _negamax(self, depth: int, alpha: int, beta: int, ply: int, allow_null: bool = True) -> int:
-        self.nodes += 1
-        if self.nodes % CHECK_INTERVAL == 0:
-            self._check_limits()
+        self._count_node()
 
         board = self.board
         self.pv_table[ply] = []
@@ -314,17 +356,30 @@ class Searcher:
                 if entry_flag == UPPER_BOUND and entry_score <= alpha:
                     return entry_score
 
+        # The static evaluation, for the pruning below (outside the principal
+        # variation, and not in check, where it means little).
+        static_eval = None if in_check or is_pv_node else self.evaluate(board)
+
+        # Reverse futility pruning: near the leaves, a position this far above
+        # beta won't fall below it in the few plies left.
+        if (
+            static_eval is not None
+            and depth <= RFP_DEPTH
+            and abs(beta) < MATE_THRESHOLD
+            and static_eval - RFP_MARGIN * depth >= beta
+        ):
+            return static_eval
+
         # Null move pruning: if we are so far ahead that even passing keeps us
         # above beta, a real move will too. Skipped when in check and in pawn
         # endgames, where zugzwang makes passing a genuine advantage.
         if (
             allow_null
-            and not is_pv_node
-            and not in_check
+            and static_eval is not None
             and depth >= 3
             and abs(beta) < MATE_THRESHOLD
             and board.occupied_co[board.turn] & ~(board.pawns | board.kings)
-            and self.evaluate(board) >= beta
+            and static_eval >= beta
         ):
             reduction = 3 if depth >= 6 else 2
             self._push(chess.Move.null())
@@ -340,13 +395,27 @@ class Searcher:
             return -MATE_SCORE + ply if in_check else 0
         self._order_moves(moves, tt_move, ply)
 
+        # Futility pruning: this close to the leaves, a quiet move can't make up
+        # a deficit this large, so after the first move only captures,
+        # promotions and checks are searched.
+        futility = None
+        if static_eval is not None and depth in FUTILITY_MARGINS and abs(alpha) < MATE_THRESHOLD:
+            if static_eval + FUTILITY_MARGINS[depth] <= alpha:
+                futility = static_eval + FUTILITY_MARGINS[depth]
+
         original_alpha = alpha
         best_score = -INFINITY
         best_move = None
+        lmp_limit = None if is_pv_node or in_check else LMP_COUNTS.get(depth)
         for index, move in enumerate(moves):
             quiet = not board.is_capture(move) and not move.promotion
             self._push(move)
             try:
+                if futility is not None and index > 0 and quiet and not board.is_check():
+                    best_score = max(best_score, futility)
+                    continue
+                if lmp_limit is not None and index >= lmp_limit and quiet and not board.is_check():
+                    continue
                 if index == 0:
                     score = -self._negamax(depth - 1, -beta, -alpha, ply + 1)
                 else:
@@ -389,9 +458,7 @@ class Searcher:
 
     def _quiescence(self, alpha: int, beta: int, ply: int) -> int:
         """Search captures only, until the position is quiet enough to evaluate."""
-        self.nodes += 1
-        if self.nodes % CHECK_INTERVAL == 0:
-            self._check_limits()
+        self._count_node()
 
         board = self.board
         self.pv_table[ply] = []

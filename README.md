@@ -269,7 +269,7 @@ losses against the previous evaluation at the same node count).
 | File | What it does |
 | ---- | ------------ |
 | [`chessbot/evaluation.py`](chessbot/evaluation.py) | Scores a position: material plus piece-square tables, blended between middlegame and endgame by how much material is left, with pawn structure (doubled, isolated and passed pawns), rooks on open files and the pawn shield in front of the king. It also knows a bishop-pair bonus, which material counts are dead draws, and how to push a lone king to the edge to mate it. |
-| [`chessbot/search.py`](chessbot/search.py) | Chooses the move. Iterative-deepening alpha-beta (negamax with PVS), a transposition table, quiescence search, MVV-LVA / killer / history move ordering, null-move pruning, late-move reductions, check extensions, mate-distance scoring, and repetition and fifty-move draw detection. |
+| [`chessbot/search.py`](chessbot/search.py) | Chooses the move. Iterative-deepening alpha-beta (negamax with PVS) with aspiration windows, a transposition table, quiescence search, MVV-LVA / killer / history move ordering, null-move pruning, reverse futility and futility pruning, late-move pruning and reductions, check extensions, mate-distance scoring, and repetition and fifty-move draw detection. |
 | [`chessbot/uci.py`](chessbot/uci.py) | The UCI protocol. The search runs on its own thread so `stop` and `isready` get answered while it is thinking. |
 | [`chessbot/openings.py`](chessbot/openings.py) | Opening names, from the public-domain [Lichess chess-openings](https://github.com/lichess-org/chess-openings) data set (`scripts/build_openings.py` rebuilds `openings.json`). |
 | [`chessbot/book.py`](chessbot/book.py) | The opening book the Club level and up play from: the moves of the named Lichess opening lines, kept only where Stockfish rates them within a third of a pawn of its best move (`scripts/build_book.py` rebuilds `book.json`). Main lines come up more often than sidelines. |
@@ -343,7 +343,8 @@ Actions → Engine match → Run workflow, give the two revisions (or
 a download.
 
 Ideas worth testing this way: static exchange evaluation (SEE) to prune bad
-captures, aspiration windows, mobility in the evaluation, and tuning the
+captures (the crude version, skipping any capture by a more valuable piece of
+a defended one, lost 35 Elo), mobility in the evaluation, and tuning the
 evaluation weights with self-play.
 
 ## License
