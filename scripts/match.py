@@ -19,6 +19,9 @@ chessbot/sprt.py).
     # Against Stockfish held to 1900, just for an Elo estimate
     python scripts/match.py --base stockfish:1900 --no-sprt --games 200
 
+    # How many nodes does the new version need to match the old one at 12000?
+    python scripts/match.py --base v1.2 --nodes 4000 --base-nodes 12000 --no-sprt --games 400
+
 An engine is a directory holding this project, a git revision (exported to a
 temporary directory), or "stockfish[:ELO]".
 """
@@ -149,9 +152,9 @@ def opening_board(opening: list[str]) -> chess.Board:
 # ---------------------------------------------------------------- games
 
 
-def make_limit(args: dict, clocks: dict) -> chess.engine.Limit:
-    if args["nodes"]:
-        return chess.engine.Limit(nodes=args["nodes"])
+def make_limit(args: dict, clocks: dict, nodes: int | None) -> chess.engine.Limit:
+    if nodes:
+        return chess.engine.Limit(nodes=nodes)
     if args["movetime"]:
         return chess.engine.Limit(time=args["movetime"] / 1000)
     return chess.engine.Limit(
@@ -159,8 +162,11 @@ def make_limit(args: dict, clocks: dict) -> chess.engine.Limit:
     )
 
 
-def play_game(engines: dict, opening: list[str], args: dict, game_id: object) -> tuple[str, str, chess.Board]:
-    """Play one game; returns (result, how it ended, final board)."""
+def play_game(
+    engines: dict, opening: list[str], args: dict, game_id: object, nodes: dict | None = None
+) -> tuple[str, str, chess.Board]:
+    """Play one game; returns (result, how it ended, final board). ``nodes``: each colour's node budget."""
+    nodes = nodes or {chess.WHITE: args["nodes"], chess.BLACK: args["nodes"]}
     board = opening_board(opening)
     clocks = {chess.WHITE: args["base"], chess.BLACK: args["base"]}
     history = {chess.WHITE: [], chess.BLACK: []}  # each engine's scores, from White's side
@@ -172,7 +178,8 @@ def play_game(engines: dict, opening: list[str], args: dict, game_id: object) ->
             return "1/2-1/2", "move limit", board
         mover = board.turn
         start = time.perf_counter()
-        played = engines[mover].play(board, make_limit(args, clocks), info=chess.engine.INFO_SCORE, game=game_id)
+        limit = make_limit(args, clocks, nodes[mover])
+        played = engines[mover].play(board, limit, info=chess.engine.INFO_SCORE, game=game_id)
         if not (args["nodes"] or args["movetime"]):
             clocks[mover] -= time.perf_counter() - start
             if clocks[mover] < 0:
@@ -212,7 +219,8 @@ def play_pair(job: tuple) -> dict:
         scores, pgns, endings = [], [], []
         for game_number, new_color in enumerate((chess.WHITE, chess.BLACK)):
             seats = {new_color: engines["new"], not new_color: engines["base"]}
-            result, reason, board = play_game(seats, opening, args, game_id=(index, game_number))
+            nodes = {new_color: args["nodes"], not new_color: args["base_nodes"] or args["nodes"]}
+            result, reason, board = play_game(seats, opening, args, (index, game_number), nodes)
             white_score = {"1-0": 1.0, "0-1": 0.0}.get(result, 0.5)
             scores.append(white_score if new_color == chess.WHITE else 1 - white_score)
             endings.append(reason)
@@ -248,6 +256,7 @@ def main() -> int:
     limit.add_argument("--nodes", type=int, help="nodes per move (default: 10000)")
     limit.add_argument("--movetime", type=int, help="milliseconds per move")
     limit.add_argument("--tc", help="clock per game as SECONDS+INCREMENT, like 10+0.1")
+    parser.add_argument("--base-nodes", type=int, help="nodes per move for the base engine (default: --nodes)")
     parser.add_argument("--games", type=int, default=2000, help="most games to play (default: 2000)")
     parser.add_argument("--concurrency", type=int, default=os.cpu_count() or 1, help="games at once (default: CPUs)")
     parser.add_argument(
@@ -270,6 +279,8 @@ def main() -> int:
 
     if not (args.nodes or args.movetime or args.tc):
         args.nodes = 10_000
+    if args.base_nodes and not args.nodes:
+        parser.error("--base-nodes goes with --nodes")
     base_time, inc = 0.0, 0.0
     if args.tc:
         base_time, _, inc_text = args.tc.partition("+")
@@ -285,6 +296,8 @@ def main() -> int:
         if not openings:
             parser.error("no openings")
         limit_text = f"{args.nodes} nodes" if args.nodes else f"{args.movetime} ms" if args.movetime else f"{args.tc} s"
+        if args.base_nodes and args.base_nodes != args.nodes:
+            limit_text = f"{args.nodes} nodes (base {args.base_nodes})"
         print(
             f"{new['name']} vs {base['name']}, {limit_text} a move, {len(openings)} openings, "
             f"{args.concurrency} at a time" + (f", SPRT [{sprt[0]:g}, {sprt[1]:g}]" if sprt else ""),
@@ -293,6 +306,7 @@ def main() -> int:
 
         game_args = {
             "nodes": args.nodes,
+            "base_nodes": args.base_nodes,
             "movetime": args.movetime,
             "base": base_time,
             "inc": inc,

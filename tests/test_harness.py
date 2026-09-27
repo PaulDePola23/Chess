@@ -82,6 +82,14 @@ def test_match_between_two_engine_processes():
     assert "Games     2:" in out and "pairs [0, 0, 1, 0, 0]" in out
 
 
+def test_match_with_a_node_budget_for_each_engine():
+    out = run_script(
+        "scripts/match.py", "--base", str(ROOT), "--nodes", "300", "--base-nodes", "30", "--games", "2",
+        "--concurrency", "1", "--no-sprt",
+    )  # fmt: skip
+    assert "300 nodes (base 30) a move" in out and "Games     2:" in out
+
+
 def test_tactics_runner_solves_easy_puzzles():
     out = run_script("scripts/tactics.py", "--limit", "4", "--nodes", "3000", "--concurrency", "1")
     assert "Solved" in out and "of 4" in out

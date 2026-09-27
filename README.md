@@ -332,7 +332,10 @@ python scripts/match.py --base stockfish:1900 --no-sprt --games 200
   `chessbot/sprt.py`): with the default bounds [0, 10] it stops as soon as
   it is 95% sure a change is worth something (PASSED) or isn't worth 10 Elo
   (FAILED). Games count in pairs (the pentanomial model), which cancels most
-  of the luck of the openings.
+  of the luck of the openings. `--base-nodes` gives the base engine its own
+  node budget, to find how many nodes a new version needs to play as well as
+  an old one (the way the play levels keep their ratings when the search
+  improves).
 
 The **Engine match** workflow runs `scripts/match.py` on GitHub's machine:
 Actions → Engine match → Run workflow, give the two revisions (or
