@@ -334,18 +334,23 @@ def test_server_serves_icons_and_manifest(server):
     assert config["offline"] is False  # no service worker for the local server
 
 
-def test_friend_games_use_functions_the_setup_sql_defines():
+def test_the_site_calls_only_functions_the_setup_sql_defines():
     root = pathlib.Path(__file__).resolve().parent.parent
     app = (root / "chessbot" / "web" / "app.js").read_text()
-    called = set(re.findall(r'(?:rpc|friendAction)\("(\w+)"', app))
+    called = set(re.findall(r'(?:rpc|friendAction|signIn)\("(\w+)"', app))
     assert {"create_live_game", "join_live_game", "play_live_move", "resign_live_game", "live_game_draw"} <= called
-    for sql_file in ("games.sql", "upgrade-3.sql"):
-        sql = (root / "supabase" / sql_file).read_text()
+    assert {"claim_name", "sign_in", "sign_out", "session_name", "name_taken", "record_game"} <= called
+    setup = (root / "supabase" / "games.sql").read_text()
+    upgrades = "\n".join(path.read_text() for path in sorted((root / "supabase").glob("upgrade-*.sql")))
+    for sql in (setup, upgrades):
         for name in called:
-            assert f"function public.{name}(" in sql, (sql_file, name)
-            assert re.search(rf"grant execute on function public\.{name}\(.*\) to anon", sql), (sql_file, name)
-        # The seat tokens must stay out of the public key's reach.
-        assert "revoke all on public.live_game_seats from anon, authenticated;" in sql
+            assert f"function public.{name}(" in sql, name
+            assert re.search(rf"grant execute on function public\.{name}\(.*\) to anon", sql), name
+        # The seat tokens, passwords and sign-ins must stay out of the public key's reach.
+        for table in ("live_game_seats", "players", "player_sessions"):
+            assert f"revoke all on public.{table} from anon, authenticated;" in sql, table
+    # Once names are locked, games and puzzle attempts only come in through record_game and co.
+    assert "for insert" not in setup and "grant select, insert" not in setup
     html = (root / "chessbot" / "web" / "index.html").read_text()
     assert 'data-tab="friend"' in html and 'data-view="friend"' in html
 

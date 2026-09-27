@@ -476,6 +476,25 @@ button, input, textarea { font: inherit; color: inherit; }
   border-radius: 6px;
   background: var(--bg);
 }
+/* Your name, and once names are locked, its password. */
+.account { display: flex; flex-direction: column; gap: 8px; margin: 0; }
+.account-lock { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 8px; }
+.account-lock button { min-width: 7.5em; }
+.account-note { margin: 0; font-size: 13px; color: var(--muted); }
+.account-note:empty { display: none; }
+.account-signed-in {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 8px 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-2);
+}
+.account-signed-in p { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.account-signed-in span { font: 600 11px/1.2 var(--sans); text-transform: uppercase; letter-spacing: 0.09em; color: var(--muted); }
+.account-signed-in strong { font-size: 15px; }
 .level-picker { margin: 0; padding: 0; border: 0; min-width: 0; }
 .level-picker legend { margin-bottom: 6px; padding: 0; }
 /* Rows of four beginner levels, three stronger ones, then Summer, Titan and Pinky. */

@@ -97,6 +97,9 @@
     const PUZZLE_KEY = "chessbot.puzzle_attempts.v1";
     return {
       shared: false,
+      async namesLocked() {
+        return false; // names only matter in this browser
+      },
       async listPuzzleAttempts() {
         return storageGet(PUZZLE_KEY, []);
       },
@@ -115,6 +118,11 @@
   }
 
   // Supabase's REST API over a `games` table (see supabase/games.sql).
+  //
+  // The name lock (supabase/upgrade-4.sql): each name belongs to the player who
+  // claimed it with a password, and games and puzzle attempts go in through
+  // database functions that put the signed-in name on them. Until that SQL has
+  // been run, names are free and rows go straight into the tables.
   function supabaseStore({ url, key }) {
     const PENDING = "chessbot.pending.v1";
     const headers = { apikey: key, "Content-Type": "application/json" };
@@ -126,7 +134,76 @@
     // table doesn't have them yet, save the game without them.
     const NEWER_COLUMNS = ["hints", "moves_uci"];
 
-    async function insert(record, keepalive = false) {
+    // Live games against a friend need supabase/upgrade-3.sql; PostgREST
+    // answers 404 for its tables and functions until that has been run.
+    const NOT_SET_UP = "Online games aren't switched on for this site yet (supabase/upgrade-3.sql).";
+    const NO_NAMES = "Names aren't locked on this site yet (supabase/upgrade-4.sql).";
+
+    async function rpc(name, args, { notSetUp = NOT_SET_UP, keepalive = false } = {}) {
+      const response = await fetch(`${url}/rest/v1/rpc/${name}`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(args),
+        cache: "no-store",
+        keepalive,
+      });
+      const text = await response.text();
+      if (response.status === 404) throw new Error(notSetUp);
+      if (!response.ok) {
+        let message = `The server turned that down (${response.status}).`;
+        try {
+          message = JSON.parse(text).message || message;
+        } catch {
+          // Not JSON; keep the generic message.
+        }
+        const error = new Error(message);
+        error.status = response.status;
+        throw error;
+      }
+      return text ? JSON.parse(text) : null;
+    }
+
+    // Whether upgrade-4.sql has been run: null until the database has answered.
+    let locked = null;
+    async function namesLocked() {
+      if (locked === null) {
+        try {
+          await rpc("name_taken", { p_name: "" });
+          locked = true;
+        } catch (error) {
+          if (error.message !== NOT_SET_UP) throw error; // offline: ask again later
+          locked = false;
+        }
+      }
+      return locked;
+    }
+
+    // An account call that answers {name, token} or {error}.
+    async function signIn(name, args) {
+      const result = await rpc(name, args, { notSetUp: NO_NAMES });
+      if (result.error) throw new Error(result.error);
+      return result;
+    }
+
+    // A game the server turned down for good (bad data, or no signed-in name to
+    // save it under) is dropped instead of being retried forever.
+    function refused(message) {
+      const error = new Error(message);
+      error.final = true;
+      return error;
+    }
+
+    async function insert(record, token, keepalive = false) {
+      if (await namesLocked()) {
+        if (!token) throw refused("Sign in to save games under your name.");
+        try {
+          await rpc("record_game", { p_token: token, p_game: record }, { keepalive });
+        } catch (error) {
+          if (error.status >= 400 && error.status < 500) error.final = true;
+          throw error;
+        }
+        return;
+      }
       const post = (body) =>
         fetch(`${url}/rest/v1/games`, {
           method: "POST",
@@ -144,22 +221,31 @@
       if (!response.ok && response.status !== 409) throw new Error(`Saving failed (${response.status}).`);
     }
 
+    // Games waiting to be saved: {record, token}. (Older versions queued bare records.)
     async function flushPending() {
       const pending = storageGet(PENDING, []);
       const left = [];
-      for (const record of pending) {
-        try {
-          await insert(record);
-        } catch {
-          left.push(record);
+      for (const item of pending) {
+        const { record, token } = item.record ? item : { record: item, token: null };
+        // Signed out and back in since: the game is saved with the new sign-in.
+        const mine = account && account.name.toLowerCase() === record.player.trim().toLowerCase();
+        const tokens = [...new Set([token, mine ? account.token : null].filter(Boolean))];
+        let saved = false;
+        let final = true;
+        for (const t of tokens.length ? tokens : [null]) {
+          try {
+            await insert(record, t);
+            saved = true;
+            break;
+          } catch (error) {
+            final = Boolean(error.final);
+            if (!final) break;
+          }
         }
+        if (!saved && !final) left.push({ record, token });
       }
       storageSet(PENDING, left);
     }
-
-    // Live games against a friend need supabase/upgrade-3.sql; PostgREST
-    // answers 404 for its tables and functions until that has been run.
-    const NOT_SET_UP = "Online games aren't switched on for this site yet (supabase/upgrade-3.sql).";
 
     async function liveGames(ids) {
       if (!ids.length) return [];
@@ -180,25 +266,16 @@
         return (await liveGames([id]))[0] || null;
       },
       // Every change to a live game goes through a database function that checks the seat's token.
-      async rpc(name, args) {
-        const response = await fetch(`${url}/rest/v1/rpc/${name}`, {
-          method: "POST",
-          headers,
-          body: JSON.stringify(args),
-        });
-        const text = await response.text();
-        if (response.status === 404) throw new Error(NOT_SET_UP);
-        if (!response.ok) {
-          let message = `The server turned that down (${response.status}).`;
-          try {
-            message = JSON.parse(text).message || message;
-          } catch {
-            // Not JSON; keep the generic message.
-          }
-          throw new Error(message);
-        }
-        return text ? JSON.parse(text) : null;
+      rpc,
+      namesLocked,
+      async nameTaken(name) {
+        return Boolean(await rpc("name_taken", { p_name: name }, { notSetUp: NO_NAMES }));
       },
+      claimName: (name, password) => signIn("claim_name", { p_name: name, p_password: password }),
+      signIn: (name, password) => signIn("sign_in", { p_name: name, p_password: password }),
+      signOut: (token) => rpc("sign_out", { p_token: token }, { notSetUp: NO_NAMES }),
+      // The name a sign-in belongs to, or null once it has been signed out.
+      sessionName: (token) => rpc("session_name", { p_token: token }, { notSetUp: NO_NAMES }),
       // Puzzle attempts need the puzzle_attempts table (supabase/upgrade-2.sql);
       // without it they stay in this browser only.
       async listPuzzleAttempts() {
@@ -214,7 +291,11 @@
         const rows = await response.json();
         return rows.find((row) => row.player.trim().toLowerCase() === name.toLowerCase()) || null;
       },
-      async savePuzzleAttempt(record) {
+      async savePuzzleAttempt(record, { token = null } = {}) {
+        if (await namesLocked()) {
+          if (token) await rpc("record_puzzle_attempt", { p_token: token, p_attempt: record });
+          return;
+        }
         await fetch(`${url}/rest/v1/puzzle_attempts`, {
           method: "POST",
           headers: { ...headers, Prefer: "return=minimal" },
@@ -227,17 +308,24 @@
         if (!response.ok) throw new Error(`Couldn't load stats (${response.status}).`);
         return response.json();
       },
-      async save(record, { keepalive = false } = {}) {
+      async save(record, { keepalive = false, token = null } = {}) {
         try {
-          await insert(record, keepalive);
+          await insert(record, token, keepalive);
         } catch (error) {
           // Keep it and try again next time the stats load.
-          storageSet(PENDING, [...storageGet(PENDING, []), record]);
+          if (!error.final) storageSet(PENDING, [...storageGet(PENDING, []), { record, token }]);
           throw error;
         }
       },
     };
   }
+
+  // The signed-in player, {name, token}, when the name lock is on (see supabaseStore).
+  const ACCOUNT_KEY = "chessbot.account.v1";
+  let account = (() => {
+    const saved = storageGet(ACCOUNT_KEY, null);
+    return saved && typeof saved.name === "string" && typeof saved.token === "string" ? saved : null;
+  })();
 
   const stats = CONFIG.stats && CONFIG.stats.url && CONFIG.stats.key ? supabaseStore(CONFIG.stats) : localStore();
 
@@ -528,6 +616,11 @@
     loading: "Setting up the board…",
   };
   let playerName = storageGet(NAME_KEY, "") || "";
+  // Once names are locked, games and puzzles are saved under the signed-in
+  // name; before that, under whatever the player typed.
+  let namesLocked = Boolean(account); // until the database says
+  const savedName = () => (namesLocked ? (account ? account.name : "") : playerName.trim());
+  const accountToken = () => (namesLocked && account ? account.token : null);
   let coachMode = Boolean(storageGet(COACH_KEY, false));
   let soundOn = Boolean(storageGet(SOUND_KEY, false));
 
@@ -615,7 +708,7 @@
       const node = $(id);
       // Titan and Pinky are Stockfish, so they play under their own names.
       node.querySelector(".player-name").textContent =
-        color === game.human ? playerName || "You" : bot.stockfish ? bot.name : "Paul's Chess Bot";
+        color === game.human ? savedName() || "You" : bot.stockfish ? bot.name : "Paul's Chess Bot";
       node.querySelector(".player-side").textContent =
         color === game.human ? color : `${color} · ${bot.stockfish ? "Stockfish" : bot.name} ${bot.elo}`;
       node.classList.toggle("to-move", turn === color);
@@ -708,7 +801,10 @@
       (chosenLevel && Number(chosenLevel.value) !== game.level) || (chosenColor && chosenColor.value !== game.human);
     let note;
     if (inProgress && changed) note = "Your new choices take effect when you start a new game.";
-    else if (!playerName.trim()) note = "Add your name to save your games to the Stats page.";
+    else if (!savedName())
+      note = namesLocked
+        ? "Sign in or claim a name to save your games to the Stats page."
+        : "Add your name to save your games to the Stats page.";
     else if (!rated()) {
       const why = game.takebacks && game.hints ? "took back a move and used a hint" : game.takebacks ? "took back a move" : "used a hint";
       note = `Unrated: you ${why}. It still counts on the Stats page, but not for your rating.`;
@@ -1142,7 +1238,7 @@
       const level = levelInfo(game.level);
       // Paul asked for easier games: for him the bot quietly plays well below
       // its label, and the game still records the chosen level.
-      const handicapped = playerName.trim().toLowerCase() === "paul";
+      const handicapped = savedName().toLowerCase() === "paul";
       const { reply, state } = level.stockfish
         ? await stockfishReply(game.moves, handicapped ? Math.max(1320, level.stockfish - 500) : level.stockfish, onProgress)
         : await backend.move(game.moves, handicapped ? Math.max(1, game.level - 2) : game.level, onProgress);
@@ -1262,7 +1358,7 @@
     const o = outcome();
     game.recorded = true;
     saveGame();
-    const name = playerName.trim();
+    const name = savedName();
     if (!o.over || !name || game.moves.length < 2) return;
     const bot = levelInfo(game.level);
     const summary = reviewItems ? reviewSummary(reviewItems) : null;
@@ -1285,7 +1381,7 @@
       opening: openingLabel().slice(0, 80),
       moves_uci: game.moves.join(" ").slice(0, 10000),
     };
-    stats.save(record, { keepalive }).catch(() => {
+    stats.save(record, { keepalive, token: accountToken() }).catch(() => {
       // Supabase saves that fail are queued and retried when stats next load.
     });
     statsCache = null;
@@ -1405,10 +1501,142 @@
 
   $("review-back").addEventListener("click", () => viewReviewItem(null));
 
+  // ------------------------------------------------------------ play: your name
+
+  // Once supabase/upgrade-4.sql has been run, each name belongs to the player
+  // who claimed it: they choose a password the first time and sign in with it
+  // on other devices. Until then (and without a shared database) a name is
+  // just what the player types.
+  const accountForm = {
+    status: null, // the typed name: null (not looked up yet), "free" or "taken"
+    lookup: 0, // bumped on every lookup so that late answers are ignored
+    busy: false,
+    error: null,
+  };
+  let lookupTimer = null;
+
+  function renderAccount() {
+    const form = accountForm;
+    const signedIn = Boolean(accountToken());
+    $("account-form").hidden = signedIn;
+    $("account-signed-in").hidden = !signedIn;
+    $("account-lock").hidden = !namesLocked || signedIn;
+    $("player-name").autocomplete = namesLocked ? "username" : "nickname";
+    $("account-error").hidden = !form.error;
+    $("account-error").textContent = form.error || "";
+    if (signedIn) {
+      $("account-name").textContent = savedName();
+      return;
+    }
+    const typed = playerName.trim();
+    const claiming = form.status === "free";
+    $("account-submit").textContent = form.busy ? "Checking…" : claiming ? "Claim name" : "Sign in";
+    $("account-submit").disabled = form.busy || !typed;
+    $("player-password").autocomplete = claiming ? "new-password" : "current-password";
+    $("player-password-label").textContent = claiming ? "Choose a password" : "Password";
+    let note = "";
+    if (!namesLocked || form.error) note = "";
+    else if (!typed) note = "Each name belongs to the player who claimed it. Type yours to sign in, or a new one to claim it.";
+    else if (form.status === "taken") note = `${typed} is taken. If it's yours, enter its password.`;
+    else if (claiming)
+      note = `Nobody has ${typed} yet. Choose a password (at least 4 characters) to make it yours. You'll sign in with it on your other devices.`;
+    $("account-note").textContent = note;
+  }
+
+  // Looks up whether the typed name is taken, a moment after the typing stops.
+  function nameChanged() {
+    accountForm.status = null;
+    accountForm.error = null;
+    accountForm.lookup++;
+    clearTimeout(lookupTimer);
+    if (namesLocked && !accountToken() && playerName.trim()) lookupTimer = setTimeout(lookupName, 300);
+    renderAccount();
+  }
+
+  async function lookupName() {
+    const lookup = ++accountForm.lookup;
+    let taken;
+    try {
+      taken = await stats.nameTaken(playerName.trim());
+    } catch {
+      return; // offline: the sign-in button still works once it's back
+    }
+    if (lookup !== accountForm.lookup) return;
+    accountForm.status = taken ? "taken" : "free";
+    renderAccount();
+  }
+
+  function accountChanged() {
+    storageSet(ACCOUNT_KEY, account);
+    statsCache = null;
+    renderAccount();
+    renderPlayers();
+    renderControls();
+    renderTrainer();
+    renderFriend();
+  }
+
+  $("account-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const name = playerName.trim();
+    const password = $("player-password").value;
+    if (!namesLocked || !name || accountForm.busy) return;
+    accountForm.busy = true;
+    accountForm.error = null;
+    accountForm.lookup++; // this answer replaces any lookup still on its way
+    renderAccount();
+    try {
+      const taken = await stats.nameTaken(name);
+      accountForm.status = taken ? "taken" : "free";
+      if (!taken && password.length < 4) throw new Error("Choose a password of at least 4 characters.");
+      const result = taken ? await stats.signIn(name, password) : await stats.claimName(name, password);
+      account = { name: result.name, token: result.token };
+      playerName = result.name;
+      storageSet(NAME_KEY, playerName);
+      $("player-name").value = playerName;
+      $("player-password").value = "";
+      accountForm.status = null;
+      syncPuzzleRating();
+      if (stats.flush) stats.flush().catch(() => {});
+    } catch (error) {
+      accountForm.error = friendError(error);
+    } finally {
+      accountForm.busy = false;
+      accountChanged();
+    }
+  });
+
+  $("sign-out").addEventListener("click", () => {
+    if (account) stats.signOut(account.token).catch(() => {});
+    account = null;
+    accountChanged();
+    nameChanged();
+  });
+
+  // At start: are names locked on this site, and is this browser's sign-in still good?
+  async function checkAccount() {
+    try {
+      namesLocked = await stats.namesLocked();
+      if (namesLocked && account) {
+        const name = await stats.sessionName(account.token);
+        if (name) account = { ...account, name };
+        else {
+          account = null;
+          accountForm.error = "You've been signed out. Sign in again to keep saving your games and puzzles.";
+        }
+      }
+    } catch {
+      return; // offline: carry on as before
+    }
+    accountChanged();
+    if (namesLocked && !account && playerName.trim()) lookupName();
+  }
+
   $("player-name").value = playerName;
   $("player-name").addEventListener("input", (event) => {
     playerName = event.target.value.slice(0, 24);
     storageSet(NAME_KEY, playerName);
+    nameChanged();
     renderPlayers();
     renderControls();
   });
@@ -2334,7 +2562,7 @@
   // A puzzle rating saved under the player's name that is newer than this
   // browser's (from another device, or set by hand in the database) replaces it.
   async function syncPuzzleRating() {
-    const name = playerName.trim();
+    const name = savedName();
     if (!name || !stats.latestPuzzleAttempt) return;
     let latest = null;
     try {
@@ -2404,9 +2632,11 @@
     $("trainer-solved").textContent = String(p.solved);
     $("trainer-streak").textContent = String(p.streak);
     $("trainer-best").textContent = String(p.best);
-    $("trainer-note").textContent = playerName.trim()
-      ? `Saving your puzzles as ${playerName.trim()}.`
-      : "Enter your name on the Play tab to put your puzzle rating on the Stats page.";
+    $("trainer-note").textContent = savedName()
+      ? `Saving your puzzles as ${savedName()}.`
+      : namesLocked
+        ? "Sign in on the Play tab to put your puzzle rating on the Stats page."
+        : "Enter your name on the Play tab to put your puzzle rating on the Stats page.";
     if (!puzzle || !trainer.state) {
       trainerBoard.render({ fen: puzzle ? puzzle.fen : START_FEN });
       return;
@@ -2461,7 +2691,7 @@
     saveTrainer();
     $("trainer-change").textContent = change >= 0 ? `+${change}` : `−${-change}`;
     $("trainer-change").className = "trainer-change " + (change >= 0 ? "up" : "down");
-    const name = playerName.trim();
+    const name = savedName();
     if (name) {
       stats
         .savePuzzleAttempt({
@@ -2472,7 +2702,7 @@
           solved,
           rating_after: Math.round(p.rating),
           played_at: p.at,
-        })
+        }, { token: accountToken() })
         .catch(() => {});
       statsCache = null;
     }
@@ -2724,9 +2954,16 @@
     }
   }
 
+  // Signed in, you play under your own name; guests type any name nobody has claimed.
+  function showFriendName(input) {
+    const signedIn = Boolean(savedName() && accountToken());
+    input.readOnly = signedIn;
+    if (signedIn) input.value = savedName();
+    else if (document.activeElement !== input) input.value = playerName;
+  }
+
   function renderFriendLobby() {
-    const name = $("friend-name");
-    if (document.activeElement !== name) name.value = playerName;
+    showFriendName($("friend-name"));
     $("friend-create").disabled = friend.busy || !onlineGames;
     $("friend-local").disabled = friend.busy;
     $("friend-lobby-note").textContent = onlineGames
@@ -2739,8 +2976,7 @@
     const host = row.white_name ? "white" : "black";
     $("friend-invite-title").textContent = `${row[`${host}_name`]} invited you to a game`;
     $("friend-invite-text").textContent = `You'll play ${other(host)}. Add your name so they know who's joined.`;
-    const name = $("friend-join-name");
-    if (document.activeElement !== name) name.value = playerName;
+    showFriendName($("friend-join-name"));
     $("friend-join").disabled = friend.busy;
   }
 
@@ -2944,6 +3180,10 @@
   }
 
   function friendNameFrom(input) {
+    if (accountToken()) {
+      friend.error = null;
+      return savedName();
+    }
     const name = input.value.trim().slice(0, 24);
     if (!name) {
       friend.error = "Add your name first, so your friend knows who they're playing.";
@@ -2954,9 +3194,13 @@
     playerName = name;
     storageSet(NAME_KEY, name);
     $("player-name").value = name;
+    nameChanged();
     friend.error = null;
     return name;
   }
+
+  // Proof that a claimed name is yours (only sent once names are locked, as older databases don't take it).
+  const signedInAs = () => (accountToken() ? { p_player_token: accountToken() } : {});
 
   const randomToken = () =>
     Array.from(crypto.getRandomValues(new Uint8Array(24)), (byte) => byte.toString(16).padStart(2, "0")).join("");
@@ -2971,7 +3215,7 @@
     friend.busy = true;
     renderFriend();
     try {
-      await stats.rpc("create_live_game", { p_id: id, p_token: token, p_name: name, p_color: color });
+      await stats.rpc("create_live_game", { p_id: id, p_token: token, p_name: name, p_color: color, ...signedInAs() });
       friend.seats[id] = { token, color, at: Date.now() };
       saveFriend();
       location.hash = `#friend/${id}`;
@@ -2999,7 +3243,7 @@
     friend.busy = true;
     renderFriend();
     try {
-      const color = await stats.rpc("join_live_game", { p_id: id, p_token: token, p_name: name });
+      const color = await stats.rpc("join_live_game", { p_id: id, p_token: token, p_name: name, ...signedInAs() });
       friend.seats[id] = { token, color, at: Date.now() };
       saveFriend();
     } catch (error) {
@@ -3012,9 +3256,11 @@
   });
 
   $("friend-name").addEventListener("input", (event) => {
+    if (event.target.readOnly) return;
     playerName = event.target.value.slice(0, 24);
     storageSet(NAME_KEY, playerName);
     $("player-name").value = playerName;
+    nameChanged();
   });
 
   $("friend-copy").addEventListener("click", async () => {
@@ -3327,6 +3573,8 @@
     syncChoices();
     showView();
     render();
+    renderAccount();
+    checkAccount();
     loadLessons();
     loadShowcase();
     backend.onStatus = (text) => {

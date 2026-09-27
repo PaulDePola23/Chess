@@ -142,8 +142,33 @@ If your tables were created from an older `games.sql`, also run the upgrades:
 [`supabase/upgrade-1.sql`](supabase/upgrade-1.sql) (hints and replays; until
 then games still save, just without those details) and
 [`supabase/upgrade-2.sql`](supabase/upgrade-2.sql) (puzzle ratings; until then
-they stay in each browser) and [`supabase/upgrade-3.sql`](supabase/upgrade-3.sql)
-(online games on the Friend tab).
+they stay in each browser), [`supabase/upgrade-3.sql`](supabase/upgrade-3.sql)
+(online games on the Friend tab) and [`supabase/upgrade-4.sql`](supabase/upgrade-4.sql)
+(the name lock; until then anyone can type any name).
+
+### Names and passwords
+
+Each name belongs to the first person who uses it. On the Play tab they type
+it, choose a password (at least 4 characters) and press **Claim name**; on
+their other devices they type the same name and password and press **Sign
+in**. From then on nobody else can save games or puzzles under that name or
+use it in online games (guests pick a name nobody has claimed). Names are
+compared ignoring capitals and spaces at the ends, so "Paul" and " paul" are
+the same name.
+
+The database keeps only bcrypt hashes of the passwords (`players`) and hashes
+of each browser's sign-in token (`player_sessions`), in tables the public key
+can't read. Games and puzzle attempts come in through `record_game` and
+`record_puzzle_attempt`, which put the signed-in name on them; the public key
+can't add rows directly. Five wrong passwords in a row lock a name for 15
+minutes. Someone who forgets their password can be freed by the project's
+owner in the SQL Editor, keeping their games:
+
+```sql
+delete from public.players where name_key = lower('Their name');
+```
+
+They then claim the name again with a new password.
 
 ### Playing a friend online
 
@@ -181,7 +206,9 @@ The public site keeps everyone's games in a Supabase project, configured in
 free [Supabase](https://supabase.com) project:
 
 1. Create a project, open **SQL Editor**, and run [`supabase/games.sql`](supabase/games.sql).
-   It creates a `games` table that anyone can read and add to, but not change.
+   It creates the tables for games, puzzle attempts, names and online games.
+   Anyone can read the games; only a player signed in to their name can add to
+   them, and nobody can change them.
 2. From the project's **API** settings, copy the **Project URL** and the public
    **anon** (or **publishable**) key. Both are meant to be public; never use the
    secret or `service_role` key.
@@ -192,8 +219,8 @@ free [Supabase](https://supabase.com) project:
 
 For `chessbot serve` or `chessbot build-site`, set the same two environment
 variables (or pass `--stats-url` and `--stats-key` to `build-site`). Names
-and results are public, and because the site has no logins, anyone could
-submit made-up results.
+and results are public. Only a browser signed in to a name can save games
+under it, but a signed-in player could still submit made-up results.
 
 ### Analysing a position
 

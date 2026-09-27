@@ -85,8 +85,8 @@
       <h2 id="how-title">How to play</h2>
       <ol class="steps">
         <li>
-          <h3>Enter your name</h3>
-          <p>Type it in <b>Your name</b> on the Play tab. Your finished games then count towards your record and rating on the Stats tab. Leave it empty to play without saving.</p>
+          <h3>Claim your name</h3>
+          <p>Type it in <b>Your name</b> on the Play tab and choose a password. The name is then yours: nobody else can play under it, and you sign in with the password on your other devices. Your finished games count towards your record and rating on the Stats tab. Leave it empty to play without saving.</p>
         </li>
         <li>
           <h3>Pick an opponent</h3>
@@ -235,9 +235,24 @@
       </div>
 
       <div class="controls">
-        <div class="field">
-          <label for="player-name">Your name</label>
-          <input id="player-name" maxlength="24" placeholder="Shown on the Stats page" autocomplete="nickname" spellcheck="false">
+        <form class="account" id="account-form" novalidate>
+          <div class="field">
+            <label for="player-name">Your name</label>
+            <input id="player-name" name="username" maxlength="24" placeholder="Shown on the Stats page" autocomplete="nickname" spellcheck="false">
+          </div>
+          <div class="account-lock" id="account-lock" hidden>
+            <div class="field">
+              <label for="player-password" id="player-password-label">Password</label>
+              <input id="player-password" name="password" type="password" maxlength="72" autocomplete="current-password">
+            </div>
+            <button type="submit" id="account-submit">Sign in</button>
+          </div>
+          <p class="form-error" id="account-error" role="alert" hidden></p>
+          <p class="account-note" id="account-note"></p>
+        </form>
+        <div class="account-signed-in" id="account-signed-in" hidden>
+          <p><span>Playing as</span> <strong id="account-name"></strong></p>
+          <button type="button" id="sign-out">Sign out</button>
         </div>
         <fieldset class="level-picker">
           <legend>Opponent</legend>
