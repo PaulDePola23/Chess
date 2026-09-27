@@ -36,6 +36,11 @@ EXACT, LOWER_BOUND, UPPER_BOUND = 0, 1, 2
 # How often (in nodes) to look at the clock and the stop flag.
 CHECK_INTERVAL = 1024
 
+# Aspiration windows: from depth 4, search a window this wide around the last
+# depth's score, and widen it (doubling) only when the score falls outside.
+ASPIRATION_DEPTH = 4
+ASPIRATION_WINDOW = 40
+
 
 class SearchAborted(Exception):
     """Raised inside the search when time is up or a stop was requested."""
@@ -133,7 +138,7 @@ class Searcher:
             self.can_abort = current_depth > 1
             self.root_best: tuple[chess.Move, int] | None = None
             try:
-                score = self._negamax(current_depth, -INFINITY, INFINITY, 0)
+                score = self._aspiration_search(current_depth, result.score)
             except SearchAborted:
                 # A move that was fully searched and beat the previous best at
                 # this depth is still better than last iteration's choice.
@@ -161,6 +166,24 @@ class Searcher:
         result.nodes = self.nodes
         result.elapsed = time.monotonic() - start
         return result
+
+    def _aspiration_search(self, depth: int, previous: int) -> int:
+        """Search the root at ``depth``, first in a narrow window around ``previous``."""
+        if depth < ASPIRATION_DEPTH or abs(previous) >= MATE_THRESHOLD:
+            return self._negamax(depth, -INFINITY, INFINITY, 0)
+        delta = ASPIRATION_WINDOW
+        alpha, beta = previous - delta, previous + delta
+        while True:
+            score = self._negamax(depth, alpha, beta, 0)
+            if score <= alpha:
+                alpha = max(-INFINITY, alpha - delta)
+            elif score >= beta:
+                beta = min(INFINITY, beta + delta)
+            else:
+                return score
+            delta *= 2
+            if delta > 1000:
+                alpha, beta = -INFINITY, INFINITY
 
     def rank_moves(
         self, board: chess.Board, depth: int, margin: int, max_nodes: int = 5_000
