@@ -48,9 +48,13 @@ setting until you choose):
   a move, resign, flip the board and copy the game as PGN. **Coach mode**
   rings pieces that can be taken for free (yours in red, the bot's in green),
   and there are three hints per game; games with hints or take-backs are
-  unrated. Moves slide into place, with optional sounds. When a game ends, a review lists your
-  biggest mistakes with the move you should have played; click one to see
-  it on the board.
+  unrated. Moves slide into place, with optional sounds. **Why these
+  moves?** explains the bot's latest move and yours in plain words ("Forks
+  the king and rook", "Threatens checkmate with Qxf7#", "Leaves the queen on
+  g4 to be taken", "Develops the knight") and splits the evaluation into its
+  parts (material, piece activity, pawns, rooks, king safety). When a game
+  ends, a review lists your biggest mistakes with the move you should have
+  played and why; click one to see it on the board.
 - **Puzzles**: tactics taken from real games, picked to match your puzzle
   rating, which goes up when you solve one on the first try and down when you
   miss, use a hint or look at the solution.
@@ -242,6 +246,7 @@ losses against the previous evaluation at the same node count).
 | [`chessbot/uci.py`](chessbot/uci.py) | The UCI protocol. The search runs on its own thread so `stop` and `isready` get answered while it is thinking. |
 | [`chessbot/openings.py`](chessbot/openings.py) | Opening names, from the public-domain [Lichess chess-openings](https://github.com/lichess-org/chess-openings) data set (`scripts/build_openings.py` rebuilds `openings.json`). |
 | [`chessbot/book.py`](chessbot/book.py) | The opening book the Club level and up play from: the moves of the named Lichess opening lines, kept only where Stockfish rates them within a third of a pawn of its best move (`scripts/build_book.py` rebuilds `book.json`). Main lines come up more often than sidelines. |
+| [`chessbot/explain.py`](chessbot/explain.py) | Explains a move in plain words: what it does at once (captures, checks, forks, pins, discovered attacks, threats found by letting the other side pass, saving or defending pieces, castling, development, the centre, passed pawns, open files), what a short search says it leads to (wins or loses material, mates), and how it changes each part of the evaluation (`evaluation_terms` in `evaluation.py`, which adds up to the engine's own score). |
 | [`chessbot/levels.py`](chessbot/levels.py) | The ten play levels, their measured ratings, and how the weaker ones choose their moves. |
 | [`chessbot/play.py`](chessbot/play.py) | The terminal game. |
 | [`chessbot/webapi.py`](chessbot/webapi.py), [`chessbot/server.py`](chessbot/server.py), [`chessbot/web/`](chessbot/web) | The browser game. The page keeps the game as a list of moves and asks a backend for legal moves, notation, the engine's reply and the post-game review, so all chess logic stays in Python. Lessons live in `chessbot/web/lessons.json`; `tests/test_lessons.py` checks every puzzle with the engine. |

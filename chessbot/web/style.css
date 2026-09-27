@@ -1107,3 +1107,50 @@ button.primary:hover:not(:disabled) { border-color: var(--ink); }
 }
 .friend-recent a:hover { border-color: var(--muted); }
 .friend-recent a span:last-child { color: var(--muted); white-space: nowrap; }
+
+/* Why these moves? */
+.why { display: flex; flex-direction: column; gap: 12px; padding-top: 14px; border-top: 1px solid var(--line); }
+.why-title, .why-breakdown h3 {
+  margin: 0;
+  font: 600 11px/1.2 var(--sans);
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--muted);
+}
+.why-moves { display: flex; flex-direction: column; gap: 10px; }
+.why-move { display: flex; flex-direction: column; gap: 4px; }
+.why-head { margin: 0; display: flex; align-items: baseline; gap: 8px; }
+.why-head b { font: 600 15px var(--mono); }
+.why-head span { font-size: 12px; color: var(--muted); }
+.why-reasons { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+.why-reasons li { display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 6px; font-size: 14px; line-height: 1.4; }
+.why-icon { font-weight: 800; text-align: center; }
+.why-reasons .good .why-icon { color: var(--good); }
+.why-reasons .bad .why-icon { color: var(--blunder); }
+.why-reasons .neutral .why-icon { color: var(--muted); }
+.why-loading { margin: 0; font-size: 13px; color: var(--muted); }
+.why-breakdown { display: flex; flex-direction: column; gap: 6px; }
+.why-axis { display: flex; justify-content: space-between; margin-left: 84px; margin-right: 92px; font-size: 11px; color: var(--muted); }
+.why-terms { display: flex; flex-direction: column; gap: 5px; }
+.why-term { display: grid; grid-template-columns: 76px minmax(0, 1fr) 84px; align-items: center; gap: 8px; font-size: 13px; }
+.why-term-name { color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.why-term-track { position: relative; height: 12px; }
+/* The zero line: bars grow from it, towards the side they favour. */
+.why-term-track::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: -2px;
+  bottom: -2px;
+  width: 1px;
+  background: var(--line);
+}
+.why-term-bar { position: absolute; top: 1px; height: 10px; box-sizing: border-box; border: 1px solid var(--muted); }
+.why-term-bar.white { left: 50%; background: var(--eval-white); border-left: 0; border-radius: 0 4px 4px 0; }
+.why-term-bar.black { right: 50%; background: var(--eval-black); border-right: 0; border-radius: 4px 0 0 4px; }
+.why-term-value { font: 500 11px var(--mono); font-variant-numeric: tabular-nums; color: var(--ink); white-space: nowrap; }
+.why-term-value span { color: var(--muted); }
+.why-note { margin: 0; font-size: 11px; color: var(--muted); }
+.review-why { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.review-why .why-head b { font-size: 14px; }
+

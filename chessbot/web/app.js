@@ -83,6 +83,7 @@
       review: (moves, ply) => post("/api/review", { moves, ply }),
       hint: (moves) => post("/api/hint", { moves }),
       replay: (moves) => post("/api/replay", { moves }),
+      explain: (moves, move) => post("/api/explain", { moves, move }),
     };
   }
 
@@ -763,6 +764,17 @@
       $("review-viewing-text").textContent =
         `On the board: move ${viewing.number}, where you played ${viewing.san} (red squares). ` +
         `${viewing.best_san} (green squares) was better.`;
+      const box = $("review-why");
+      box.textContent = "";
+      const reasons = why.review && why.review.index === game.viewing ? why.review : null;
+      if (reasons && reasons.played && reasons.best) {
+        box.append(
+          whyBlock(viewing.san, "What you played", reasons.played.reasons),
+          whyBlock(viewing.best_san, "The better move", reasons.best.reasons),
+        );
+      } else if (reasons) {
+        box.append(el("span", { class: "why-loading", text: "Working out why…" }));
+      }
     }
     for (const { item, index } of worst) {
       const dots = item.color === "white" ? "." : "...";
@@ -797,6 +809,147 @@
     renderSheet();
     renderControls();
     renderReview();
+    renderWhy();
+    explainRecentMoves();
+  }
+
+  // ------------------------------------------------------------ play: why these moves
+
+  // Plain-language reasons for the latest moves and the engine's evaluation
+  // split into parts (chessbot/explain.py). They are worked out while the
+  // player thinks: the bot's latest move and the player's move before it.
+  const WHY_ICONS = { good: "✓", bad: "!", neutral: "•" };
+  const TERM_LABELS = { "Piece activity": "Activity", "Pawn structure": "Pawns" };
+  const why = { key: "", entries: [], loading: false, token: 0, hint: null, review: null };
+
+  const plyLabel = (ply) => `${Math.floor(ply / 2) + 1}${ply % 2 ? "..." : "."}`;
+  const pawns = (cp) => `${cp > 0 ? "+" : cp < 0 ? "−" : ""}${Math.abs(cp / 100).toFixed(1)}`;
+
+  function reasonList(reasons) {
+    return el(
+      "ul",
+      { class: "why-reasons" },
+      ...reasons.map((r) =>
+        el("li", { class: r.kind }, el("span", { class: "why-icon", "aria-hidden": "true", text: WHY_ICONS[r.kind] }), r.text),
+      ),
+    );
+  }
+
+  function whyBlock(title, label, reasons) {
+    return el(
+      "div",
+      { class: "why-move" },
+      el("p", { class: "why-head" }, el("b", { text: title }), el("span", { text: label })),
+      reasonList(reasons),
+    );
+  }
+
+  async function explainRecentMoves() {
+    if (!backend.explain || !game.state || game.thinking || game.pending || !backendReady) return;
+    const moves = game.moves;
+    const key = moves.join(" ");
+    if (key === why.key) return;
+    why.key = key;
+    const token = ++why.token;
+    why.entries = [];
+    const plies = [moves.length - 1, moves.length - 2].filter((ply) => ply >= 0);
+    why.loading = plies.length > 0;
+    renderWhy();
+    for (const ply of plies) {
+      try {
+        const data = await backend.explain(moves.slice(0, ply), moves[ply]);
+        if (token !== why.token) return;
+        why.entries.push({ ply, data });
+      } catch {
+        if (token !== why.token) return;
+      }
+      renderWhy();
+    }
+    why.loading = false;
+    renderWhy();
+  }
+
+  async function explainHint(hint) {
+    if (!backend.explain) return;
+    const token = why.token;
+    try {
+      const data = await backend.explain(game.moves, hint.move);
+      if (token === why.token && game.hint === hint) {
+        why.hint = { move: hint.move, data };
+        renderWhy();
+      }
+    } catch {
+      // The hint itself is on the board; the reasons are a bonus.
+    }
+  }
+
+  function renderWhy() {
+    const hint = why.hint && game.hint && why.hint.move === game.hint.move ? why.hint : null;
+    $("why").hidden = !hint && !why.entries.length && !why.loading;
+    const list = $("why-moves");
+    list.textContent = "";
+    if (hint) list.append(whyBlock(hint.data.san, "Hint: a good move here", hint.data.reasons));
+    for (const { ply, data } of why.entries) {
+      const mover = ply % 2 === 0 ? "white" : "black";
+      const label = mover === game.human ? "Your move" : "The bot's move";
+      list.append(whyBlock(`${plyLabel(ply)} ${data.san}`, label, data.reasons));
+    }
+    if (why.loading && !why.entries.length) list.append(el("p", { class: "why-loading", text: "Working out why…" }));
+    renderTerms(why.entries.find((entry) => entry.ply === game.moves.length - 1));
+  }
+
+  // The evaluation of the position on the board, part by part, as bars from a
+  // zero line: right (light) is better for White, left (dark) better for Black.
+  function renderTerms(entry) {
+    $("why-breakdown").hidden = !entry;
+    const box = $("why-terms");
+    box.textContent = "";
+    if (!entry) return;
+    const whiteSign = entry.ply % 2 === 0 ? 1 : -1; // changes come from the mover's side
+    const scale = Math.max(100, ...entry.data.terms.map((t) => Math.abs(t.value)));
+    for (const term of entry.data.terms) {
+      const change = term.change * whiteSign;
+      const width = (Math.abs(term.value) / scale) * 50;
+      const side = term.value > 0 ? "white" : "black";
+      const favoured = term.value === 0 ? "level" : `better for ${side === "white" ? "White" : "Black"}`;
+      const moved = Math.abs(change) >= 10 ? ` The last move changed it by ${pawns(change)}.` : "";
+      box.append(
+        el(
+          "div",
+          { class: "why-term", role: "listitem", title: `${term.name}: ${pawns(term.value)}, ${favoured}.${moved}` },
+          el("span", { class: "why-term-name", text: TERM_LABELS[term.name] || term.name }),
+          el(
+            "span",
+            { class: "why-term-track" },
+            term.value ? el("span", { class: `why-term-bar ${side}`, style: `width: ${width.toFixed(1)}%` }) : null,
+          ),
+          el(
+            "span",
+            { class: "why-term-value" },
+            pawns(term.value),
+            Math.abs(change) >= 10 ? el("span", { text: ` (${pawns(change)})` }) : null,
+          ),
+        ),
+      );
+    }
+  }
+
+  // In the post-game review: why the move played was a mistake, and why the better move was better.
+  async function explainReviewItem(index) {
+    const item = index === null ? null : game.review && game.review.items[index];
+    why.review = item ? { index, played: null, best: null } : null;
+    renderReview();
+    if (!item || !backend.explain) return;
+    const before = game.moves.slice(0, item.ply);
+    try {
+      const [played, best] = await Promise.all([backend.explain(before, item.uci), backend.explain(before, item.best_uci)]);
+      if (why.review && why.review.index === index) {
+        Object.assign(why.review, { played, best });
+        renderReview();
+      }
+    } catch {
+      // The squares on the board still show the moves.
+    }
   }
 
   // ------------------------------------------------------------ play: flow
@@ -1096,6 +1249,7 @@
   function viewReviewItem(index) {
     game.viewing = index;
     render();
+    explainReviewItem(index);
   }
 
   function openingLabel() {
@@ -1199,6 +1353,7 @@
       game.hints++;
       game.hint = hint;
       saveGame();
+      explainHint(hint);
     } catch (error) {
       showError(error);
     }

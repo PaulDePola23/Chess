@@ -15,6 +15,7 @@ from collections.abc import Callable
 import chess
 import chess.pgn
 
+from .explain import explain_move, hanging_pieces
 from .levels import choose_move, get_level
 from .openings import opening_name
 from .search import MATE_SCORE, MATE_THRESHOLD, Searcher, SearchResult
@@ -34,10 +35,8 @@ VERDICTS = [(0.3, "blunder"), (0.2, "mistake"), (0.1, "inaccuracy")]
 # How hard the engine thinks about a hint.
 HINT_NODES = 20_000
 
+
 # Piece values for spotting pieces that can be taken for free.
-_VALUES = {chess.PAWN: 1, chess.KNIGHT: 3, chess.BISHOP: 3, chess.ROOK: 5, chess.QUEEN: 9, chess.KING: 100}
-
-
 def _board_from(moves: list[str], fen: str | None = None) -> chess.Board:
     if not isinstance(moves, list) or not all(isinstance(m, str) for m in moves):
         raise ValueError("moves must be a list of UCI strings")
@@ -60,23 +59,6 @@ def _pgn(board: chess.Board) -> str:
     for tag in ("Date", "Round", "White", "Black"):
         game.headers.pop(tag, None)
     return str(game)
-
-
-def hanging_pieces(board: chess.Board, color: chess.Color) -> list[str]:
-    """Squares of ``color``'s pieces that the other side can win: attacked and
-    either undefended or attacked by something cheaper. (A simple count that
-    ignores pins and exchanges further down the line; good enough to coach.)"""
-    squares = []
-    for square, piece in board.piece_map().items():
-        if piece.color != color or piece.piece_type == chess.KING:
-            continue
-        attackers = board.attackers(not color, square)
-        if not attackers:
-            continue
-        cheapest = min(_VALUES[board.piece_type_at(attacker)] for attacker in attackers)
-        if not board.attackers(color, square) or cheapest < _VALUES[piece.piece_type]:
-            squares.append(chess.square_name(square))
-    return sorted(squares)
 
 
 def game_state(moves: list[str], fen: str | None = None) -> dict:
@@ -278,3 +260,13 @@ def suggest_move(moves: list[str], searcher: Searcher, fen: str | None = None, n
         raise ValueError("the game is already over")
     result = searcher.search(board, nodes=nodes)
     return {"move": result.best_move.uci(), "san": board.san(result.best_move)}
+
+
+def explain(moves: list[str], move: str, fen: str | None = None) -> dict:
+    """Why ``move`` is good or bad in the position after ``moves`` (see ``chessbot.explain``)."""
+    board = _board_from(moves, fen)
+    try:
+        parsed = chess.Move.from_uci(move)
+    except (ValueError, TypeError) as error:
+        raise ValueError(f"not a move: {move!r}") from error
+    return explain_move(board, parsed)

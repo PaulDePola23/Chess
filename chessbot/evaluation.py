@@ -209,8 +209,8 @@ def _pawn_structure(white_pawns: int, black_pawns: int) -> tuple[int, int]:
     return mg, eg
 
 
-def _rooks_and_king(board: chess.Board, color: chess.Color) -> tuple[int, int]:
-    """(middlegame, endgame) bonuses for ``color``'s rooks on open files and king shelter."""
+def _rook_files(board: chess.Board, color: chess.Color) -> tuple[int, int]:
+    """(middlegame, endgame) bonus for ``color``'s rooks on open and half-open files."""
     mg = eg = 0
     own_pawns = board.pawns & board.occupied_co[color]
     all_pawns = board.pawns
@@ -222,8 +222,15 @@ def _rooks_and_king(board: chess.Board, color: chess.Color) -> tuple[int, int]:
         elif not own_pawns & file_mask:
             mg += ROOK_SEMI_OPEN_FILE[0]
             eg += ROOK_SEMI_OPEN_FILE[1]
+    return mg, eg
+
+
+def _king_shelter(board: chess.Board, color: chess.Color) -> tuple[int, int]:
+    """(middlegame, endgame) penalty for gaps in the pawn shield in front of ``color``'s castled king."""
+    mg = 0
     king = board.king(color)
     if king is not None:
+        own_pawns = board.pawns & board.occupied_co[color]
         file, rank = chess.square_file(king), chess.square_rank(king)
         home = rank if color == chess.WHITE else 7 - rank
         # Only a king tucked away on a wing has a shield worth keeping.
@@ -236,7 +243,14 @@ def _rooks_and_king(board: chess.Board, color: chess.Color) -> tuple[int, int]:
                         mg += KING_SHIELD_MISSING
                     if not own_pawns & _FILES[f]:
                         mg += KING_OPEN_FILE
-    return mg, eg
+    return mg, 0
+
+
+def _rooks_and_king(board: chess.Board, color: chess.Color) -> tuple[int, int]:
+    """(middlegame, endgame) bonuses for ``color``'s rooks on open files and king shelter."""
+    rooks_mg, rooks_eg = _rook_files(board, color)
+    king_mg, king_eg = _king_shelter(board, color)
+    return rooks_mg + king_mg, rooks_eg + king_eg
 
 
 def _is_material_draw(board: chess.Board) -> bool:
@@ -318,3 +332,51 @@ def evaluate(board: chess.Board) -> int:
     if board.turn == chess.BLACK:
         score = -score
     return score // MAX_PHASE
+
+
+TERM_NAMES = ("Material", "Piece activity", "Pawn structure", "Rooks", "King safety")
+
+
+def evaluation_terms(board: chess.Board) -> dict[str, float]:
+    """The evaluation split into its parts, in centipawns from White's side.
+
+    The parts add up to ``evaluate``'s score from White's side, to within
+    rounding. Slower than ``evaluate``: it is for explaining positions, not
+    for searching them.
+    """
+    terms = dict.fromkeys(TERM_NAMES, 0.0)
+    if _is_material_draw(board):
+        return terms
+    phase = 0
+    for piece_type, weight in PHASE_WEIGHTS.items():
+        phase += weight * chess.popcount(board.pieces_mask(piece_type, chess.WHITE))
+        phase += weight * chess.popcount(board.pieces_mask(piece_type, chess.BLACK))
+    phase = min(phase, MAX_PHASE)
+
+    def blend(mg: float, eg: float) -> float:
+        return (mg * phase + eg * (MAX_PHASE - phase)) / MAX_PHASE
+
+    for color in chess.COLORS:
+        sign = 1 if color == chess.WHITE else -1
+        for piece_type in chess.PIECE_TYPES:
+            for square in board.pieces(piece_type, color):
+                value = PIECE_VALUES[piece_type]
+                terms["Material"] += sign * value
+                terms["Piece activity"] += sign * (
+                    blend(_MG[color][piece_type][square], _EG[color][piece_type][square]) - value
+                )
+        if chess.popcount(board.bishops & board.occupied_co[color]) >= 2:
+            terms["Material"] += sign * BISHOP_PAIR_BONUS
+        terms["Rooks"] += sign * blend(*_rook_files(board, color))
+        terms["King safety"] += sign * blend(*_king_shelter(board, color))
+    terms["Pawn structure"] = blend(
+        *_pawn_structure(board.pawns & board.occupied_co[chess.WHITE], board.pawns & board.occupied_co[chess.BLACK])
+    )
+    # Driving a lone king to the edge counts as (the loser's lack of) king safety.
+    if not board.pawns:
+        for winner in chess.COLORS:
+            loser_pieces = board.occupied_co[not winner]
+            if loser_pieces == loser_pieces & board.kings and board.occupied_co[winner] & (board.rooks | board.queens):
+                bonus = _mop_up(board, winner)
+                terms["King safety"] += bonus if winner == chess.WHITE else -bonus
+    return terms

@@ -388,3 +388,28 @@ def test_site_asks_for_its_scripts_by_content_version(tmp_path):
         version = hashlib.sha256((site / name).read_bytes()).hexdigest()[:10]
         assert f'="{name}?v={version}"' in page, name
         assert f'="{name}"' not in page, name
+
+
+def test_api_explain(server):
+    status, _, body = request(server + "/api/explain", {"moves": ["e2e4"], "move": "e7e5"})
+    data = json.loads(body)
+    assert status == 200 and data["san"] == "e5" and data["reasons"] and len(data["terms"]) == 5
+    status, _, body = request(server + "/api/explain", {"moves": [], "move": "e2e5"})
+    assert status == 400
+
+
+def test_the_browser_engine_ships_every_module_it_imports():
+    # The static site's engine only has the files listed in CHESSBOT_MODULES,
+    # so a new import that isn't listed breaks the whole site.
+    from chessbot.site import CHESSBOT_MODULES
+
+    root = pathlib.Path(__file__).resolve().parent.parent / "chessbot"
+    shipped = {name.removesuffix(".py") for name in CHESSBOT_MODULES if name.endswith(".py")}
+    todo, seen = ["webapi"], set()
+    while todo:
+        module = todo.pop()
+        if module in seen:
+            continue
+        seen.add(module)
+        assert module in shipped, f"chessbot/{module}.py is imported but not in CHESSBOT_MODULES"
+        todo += re.findall(r"^from \.(\w+) import", (root / f"{module}.py").read_text(), re.MULTILINE)

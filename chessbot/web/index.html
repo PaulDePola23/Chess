@@ -206,6 +206,17 @@
         <p class="coach-legend" id="coach-legend" hidden><span class="ring-key danger"></span>Your pieces that can be taken for free <span class="ring-key chance"></span>The bot's</p>
       </div>
 
+      <section class="why" id="why" aria-labelledby="why-title" aria-live="polite" hidden>
+        <h2 class="why-title" id="why-title">Why these moves?</h2>
+        <div class="why-moves" id="why-moves"></div>
+        <div class="why-breakdown" id="why-breakdown" hidden>
+          <h3>How the engine sees the position</h3>
+          <div class="why-axis" aria-hidden="true"><span>◀ Black</span><span>White ▶</span></div>
+          <div class="why-terms" id="why-terms" role="list"></div>
+          <p class="why-note">Bars grow towards the side each part favours. Numbers in pawns; in brackets, what the last move changed.</p>
+        </div>
+      </section>
+
       <form class="move-form" id="move-form" autocomplete="off">
         <label for="move-input">Type a move</label>
         <div class="move-form-row">
@@ -264,6 +275,7 @@
         <h3 id="review-list-title">Biggest mistakes</h3>
         <p class="review-viewing" id="review-viewing" hidden>
           <span id="review-viewing-text"></span>
+          <span class="review-why" id="review-why"></span>
           <button type="button" id="review-back">Back to the final position</button>
         </p>
         <ol class="mistakes" id="review-list"></ol>

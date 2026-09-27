@@ -30,7 +30,7 @@ import chess.svg
 from . import __version__
 from .levels import DEFAULT_LEVEL, LEVELS
 from .search import Searcher
-from .webapi import engine_reply, game_state, replay_game, review_move, suggest_move
+from .webapi import engine_reply, explain, game_state, replay_game, review_move, suggest_move
 
 STATIC_FILES = {
     "/": ("index.html", "text/html; charset=utf-8"),
@@ -167,6 +167,8 @@ class ChessBotHandler(BaseHTTPRequestHandler):
                 with self.server.engine_lock:
                     hint = suggest_move(moves, self.server.searcher, fen)
                 self.send_json(HTTPStatus.OK, hint)
+            elif self.path == "/api/explain":
+                self.send_json(HTTPStatus.OK, explain(moves, request.get("move"), fen))
             else:
                 self.send_json(HTTPStatus.NOT_FOUND, {"error": f"no such endpoint: {self.path}"})
         except (ValueError, TypeError) as error:
