@@ -97,9 +97,9 @@ private repo needs a paid GitHub plan), then re-run the workflow.
 | Casual | ~800 | 2-ply search, some randomness, a random move 3% of the time |
 | Club | ~1150 | 2-ply search, a little randomness |
 | Skilled | ~1450 | full search, 1,500 positions a move |
-| Strong | ~1750 | full search, 12,000 positions a move |
-| Expert | ~1950 | full search, 40,000 positions a move |
-| Summer | ~2100 | full search, 60,000 positions a move (about 8 seconds in the browser) |
+| Strong | ~1750 | full search, 6,000 positions a move |
+| Expert | ~1950 | full search, 18,000 positions a move |
+| Summer | ~2100 | full search, 28,000 positions a move (about 4 seconds in the browser) |
 | Titan | 2500 | Stockfish with `UCI_Elo` 2500, a second a move |
 | Pinky | 2700 | Stockfish with `UCI_Elo` 2700, a second a move |
 
@@ -247,20 +247,23 @@ and `infinite`, plus `stop`. The options are `Hash` (MB) and `Move Overhead` (ms
 
 ## How strong is it?
 
-The full engine's strength depends on how long it thinks. Measured against
-Stockfish 16 with `UCI_LimitStrength` (the calibration behind the levels
-table above, 20–24 games per pairing):
+The full engine's strength depends on how many positions it looks at. The
+ratings were measured against Stockfish 16 with `UCI_LimitStrength` (20–24
+games per pairing) and carried over to the current search, which needs fewer
+positions for the same strength, by matching node budgets in games between
+the two versions (`chessbot/levels.py` has the details):
 
 | Positions a move | Time natively | Rating (Stockfish's scale) |
 | ---------------- | ------------- | -------------------------- |
-| 1,500            | 0.06 s        | ~1450 (Skilled)            |
-| 12,000           | 0.5 s         | ~1750 (Strong)             |
-| 40,000           | 1.6 s         | ~1950 (Expert)             |
-| 60,000           | 2.4 s         | ~2100 (Summer)             |
-| 80,000           | 3.2 s         | ~2230                      |
+| 1,500            | 0.07 s        | ~1450 (Skilled)            |
+| 6,000            | 0.25 s        | ~1750 (Strong)             |
+| 18,000           | 0.7 s         | ~1950 (Expert)             |
+| 28,000           | 1.2 s         | ~2100 (Summer)             |
 
-It searches about 25,000 positions a second in Python, three to four times
-slower in the browser. The pawn-structure, rook and king-shelter terms in the
+It searches about 20,000 positions a second in Python, three to four times
+slower in the browser. Futility pruning, late move pruning and aspiration
+windows made it about 40 Elo stronger at the same thinking time (726 games at
+150 ms a move). The pawn-structure, rook and king-shelter terms in the
 evaluation were worth about 50 Elo on their own (58 wins, 22 draws and 40
 losses against the previous evaluation at the same node count).
 
@@ -269,7 +272,7 @@ losses against the previous evaluation at the same node count).
 | File | What it does |
 | ---- | ------------ |
 | [`chessbot/evaluation.py`](chessbot/evaluation.py) | Scores a position: material plus piece-square tables, blended between middlegame and endgame by how much material is left, with pawn structure (doubled, isolated and passed pawns), rooks on open files and the pawn shield in front of the king. It also knows a bishop-pair bonus, which material counts are dead draws, and how to push a lone king to the edge to mate it. |
-| [`chessbot/search.py`](chessbot/search.py) | Chooses the move. Iterative-deepening alpha-beta (negamax with PVS), a transposition table, quiescence search, MVV-LVA / killer / history move ordering, null-move pruning, late-move reductions, check extensions, mate-distance scoring, and repetition and fifty-move draw detection. |
+| [`chessbot/search.py`](chessbot/search.py) | Chooses the move. Iterative-deepening alpha-beta (negamax with PVS) with aspiration windows, a transposition table, quiescence search, MVV-LVA / killer / history move ordering, null-move pruning, reverse futility and futility pruning, late-move pruning and reductions, check extensions, mate-distance scoring, and repetition and fifty-move draw detection. |
 | [`chessbot/uci.py`](chessbot/uci.py) | The UCI protocol. The search runs on its own thread so `stop` and `isready` get answered while it is thinking. |
 | [`chessbot/openings.py`](chessbot/openings.py) | Opening names, from the public-domain [Lichess chess-openings](https://github.com/lichess-org/chess-openings) data set (`scripts/build_openings.py` rebuilds `openings.json`). |
 | [`chessbot/book.py`](chessbot/book.py) | The opening book the Club level and up play from: the moves of the named Lichess opening lines, kept only where Stockfish rates them within a third of a pawn of its best move (`scripts/build_book.py` rebuilds `book.json`). Main lines come up more often than sidelines. |
@@ -343,7 +346,8 @@ Actions → Engine match → Run workflow, give the two revisions (or
 a download.
 
 Ideas worth testing this way: static exchange evaluation (SEE) to prune bad
-captures, aspiration windows, mobility in the evaluation, and tuning the
+captures (the crude version, skipping any capture by a more valuable piece of
+a defended one, lost 35 Elo), mobility in the evaluation, and tuning the
 evaluation weights with self-play.
 
 ## License
