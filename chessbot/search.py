@@ -49,6 +49,10 @@ FUTILITY_MARGINS = {1: 150, 2: 300}
 ASPIRATION_DEPTH = 4
 ASPIRATION_WINDOW = 40
 
+# Late move pruning: near the leaves, quiet moves this far down the move
+# ordering are rarely any good, so they aren't searched at all.
+LMP_COUNTS = {1: 6, 2: 10, 3: 16}
+
 
 class SearchAborted(Exception):
     """Raised inside the search when time is up or a stop was requested."""
@@ -395,12 +399,15 @@ class Searcher:
         original_alpha = alpha
         best_score = -INFINITY
         best_move = None
+        lmp_limit = None if is_pv_node or in_check else LMP_COUNTS.get(depth)
         for index, move in enumerate(moves):
             quiet = not board.is_capture(move) and not move.promotion
             self._push(move)
             try:
                 if futility is not None and index > 0 and quiet and not board.is_check():
                     best_score = max(best_score, futility)
+                    continue
+                if lmp_limit is not None and index >= lmp_limit and quiet and not board.is_check():
                     continue
                 if index == 0:
                     score = -self._negamax(depth - 1, -beta, -alpha, ply + 1)
