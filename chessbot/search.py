@@ -480,6 +480,13 @@ class Searcher:
                 # Delta pruning: even winning this piece for free can't raise alpha.
                 if best_score + _victim_value(board, move) + 200 <= alpha:
                     continue
+                # Bad captures: a piece taking something cheaper on a defended
+                # square just loses the difference, so don't look further.
+                attacker = board.piece_type_at(move.from_square)
+                if PIECE_VALUES[attacker] > _victim_value(board, move) + 50 and board.is_attacked_by(
+                    not board.turn, move.to_square
+                ):
+                    continue
             self._push(move)
             try:
                 score = -self._quiescence(-beta, -alpha, ply + 1)
