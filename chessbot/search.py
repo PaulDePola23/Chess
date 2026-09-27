@@ -268,6 +268,15 @@ class Searcher:
                 return True
         return False
 
+    def _count_node(self) -> None:
+        # The node budget is exact (play levels are node budgets); the clock
+        # and the stop flag are only looked at every CHECK_INTERVAL nodes.
+        self.nodes += 1
+        if self.node_limit is not None and self.nodes > self.node_limit and self.can_abort:
+            raise SearchAborted
+        if self.nodes % CHECK_INTERVAL == 0:
+            self._check_limits()
+
     def _check_limits(self) -> None:
         if not self.can_abort:
             return
@@ -310,9 +319,7 @@ class Searcher:
         return moves
 
     def _negamax(self, depth: int, alpha: int, beta: int, ply: int, allow_null: bool = True) -> int:
-        self.nodes += 1
-        if self.nodes % CHECK_INTERVAL == 0:
-            self._check_limits()
+        self._count_node()
 
         board = self.board
         self.pv_table[ply] = []
@@ -451,9 +458,7 @@ class Searcher:
 
     def _quiescence(self, alpha: int, beta: int, ply: int) -> int:
         """Search captures only, until the position is quiet enough to evaluate."""
-        self.nodes += 1
-        if self.nodes % CHECK_INTERVAL == 0:
-            self._check_limits()
+        self._count_node()
 
         board = self.board
         self.pv_table[ply] = []

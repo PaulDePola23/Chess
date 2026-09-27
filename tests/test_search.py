@@ -149,7 +149,15 @@ def test_can_be_stopped_from_another_thread():
 def test_node_limit():
     result = Searcher().search(chess.Board(), nodes=2000)
     assert result.best_move in chess.Board().legal_moves
-    assert result.nodes < 2000 + 2048
+    assert result.nodes <= 2000 + 1
+
+
+def test_node_budgets_are_exact():
+    # The play levels are node budgets, so 1000 and 1500 must not both mean "up to 2048".
+    board = chess.Board("r1bq1rk1/pp2bppp/2n1pn2/3p4/2PP4/2N1PN2/PP3PPP/R2QKB1R w KQ - 0 9")
+    for budget in (700, 1000, 1500, 5000):
+        result = Searcher().search(board, nodes=budget)
+        assert budget // 2 < result.nodes <= budget + 1, budget
 
 
 def test_reports_each_iteration():
