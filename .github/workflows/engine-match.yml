@@ -1,0 +1,62 @@
+name: Engine match
+
+# Plays two versions of the engine against each other and runs an SPRT
+# (scripts/match.py), on GitHub's machine instead of yours. Start it from the
+# Actions tab: Engine match -> Run workflow. The verdict shows on the run's
+# summary page, and the games are attached as a download.
+
+on:
+  workflow_dispatch:
+    inputs:
+      new:
+        description: "Engine under test: a branch, tag or commit"
+        default: "HEAD"
+      base:
+        description: "Engine to compare with: a branch, tag, commit, or stockfish:ELO"
+        default: "HEAD~1"
+      nodes:
+        description: "Nodes per move"
+        default: "10000"
+      games:
+        description: "Most games to play"
+        default: "2000"
+      sprt:
+        description: "SPRT bounds ELO0 ELO1 (or 'none' to just estimate the Elo)"
+        default: "0 10"
+
+permissions:
+  contents: read
+
+jobs:
+  match:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # the match exports any revision from the history
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: |
+          pip install -e .
+          sudo apt-get install -y --no-install-recommends stockfish
+      - name: Play
+        env:
+          NEW: ${{ inputs.new }}
+          BASE: ${{ inputs.base }}
+          NODES: ${{ inputs.nodes }}
+          GAMES: ${{ inputs.games }}
+          SPRT: ${{ inputs.sprt }}
+        run: |
+          if [ "$SPRT" = "none" ]; then sprt=(--no-sprt); else read -r elo0 elo1 <<< "$SPRT"; sprt=(--sprt "$elo0" "$elo1"); fi
+          python scripts/match.py --new "$NEW" --base "$BASE" --nodes "$NODES" --games "$GAMES" "${sprt[@]}" \
+            --pgn games.pgn --json result.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: match
+          path: |
+            games.pgn
+            result.json

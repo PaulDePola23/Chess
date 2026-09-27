@@ -5,6 +5,7 @@ chessbot play [--black]       play a game in the terminal
 chessbot serve [--open]       play in the browser at http://localhost:8000
 chessbot build-site [OUT]     build a static site that runs the engine in the browser
 chessbot analyse FEN          print the best move for a position
+chessbot bench [--depth N]    search fixed positions: speed, and a node-count signature
 """
 
 from __future__ import annotations
@@ -49,7 +50,22 @@ def build_parser() -> argparse.ArgumentParser:
     analyse_parser.add_argument("fen", nargs="?", default=chess.STARTING_FEN, help="position in FEN")
     analyse_parser.add_argument("--time", type=float, default=5.0, help="seconds to think")
     analyse_parser.add_argument("--depth", type=int, help="maximum search depth")
+
+    bench_parser = commands.add_parser("bench", help="search fixed positions: speed and a node-count signature")
+    bench_parser.add_argument("--depth", type=int, help="search depth (default: 5)")
     return parser
+
+
+def bench(depth: int | None) -> int:
+    from .bench import DEFAULT_DEPTH, run_bench
+
+    def report(index: int, fen: str, nodes: int, seconds: float) -> None:
+        print(f"position {index:2d}  nodes {nodes:>9,}  {seconds:6.2f}s  {fen}")
+
+    result = run_bench(depth or DEFAULT_DEPTH, report=report)
+    print(f"\nDepth {result.depth}: {result.nodes:,} nodes in {result.seconds:.2f}s, {result.nps:,} nodes/s")
+    print(f"Bench: {result.nodes}")
+    return 0
 
 
 def analyse(fen: str, time_limit: float, depth: int | None) -> int:
@@ -98,6 +114,8 @@ def main(argv: list[str] | None = None) -> int:
 
         print(f"Built the site in {build_site(args.out, args.stats_url, args.stats_key)}/")
         return 0
+    if args.command == "bench":
+        return bench(args.depth)
     return analyse(args.fen, args.time, args.depth)
 
 

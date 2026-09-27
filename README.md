@@ -261,7 +261,7 @@ print(result.best_move, result.score, result.depth, result.pv)
 ## Development
 
 ```bash
-pytest               # tests: mates, tactics, perpetual check, levels, review, lesson puzzles, UCI, CLI, web API
+pytest               # tests: mates, tactics, perpetual check, levels, review, lesson puzzles, UCI, CLI, web API, harness
 ruff check .         # lint
 ruff format .        # format
 ```
@@ -270,7 +270,44 @@ CI runs the same checks on Python 3.10 to 3.13 for every push and pull request.
 `chessbot build-site _site` followed by `python -m http.server -d _site` lets you
 try the static site locally.
 
-Ideas for making it stronger: static exchange evaluation (SEE) to prune bad
+### Measuring strength
+
+Engine changes that look like improvements often aren't, so there is a
+harness to test them the way serious engines are tested:
+
+```bash
+chessbot bench                                  # speed, and a node-count signature of the search
+python scripts/tactics.py                        # how many of the 577 puzzles it solves at 20,000 nodes
+python scripts/match.py                          # the working tree against HEAD, with an SPRT
+python scripts/match.py --base v1 --tc 10+0.1    # against any revision, on a clock
+python scripts/match.py --base stockfish:1900 --no-sprt --games 200
+```
+
+- **`chessbot bench`** searches 16 fixed positions to depth 5. The node total
+  is the same on every run and machine (with the same python-chess), so it
+  fingerprints the search: a speed-up or a refactor must leave it unchanged,
+  anything that changes play changes it. Put it in the commit message
+  (`Bench: 291855`).
+- **`scripts/tactics.py`** runs an engine (the working tree, any revision, or
+  Stockfish) on the Puzzles tab's positions or on any EPD test suite and
+  reports the solve rate by puzzle rating. Quick, but it only sees tactics.
+- **`scripts/match.py`** is the real test. Both engines run as UCI processes
+  (any git revision is exported next to the working tree), play balanced
+  openings from the opening book with the colours swapped in each pair, and
+  are adjudicated when both agree a game is decided. It reports the Elo
+  difference with 95% error bars and the likelihood of superiority, and runs
+  a sequential probability ratio test (SPRT, as Stockfish's fishtest does,
+  `chessbot/sprt.py`): with the default bounds [0, 10] it stops as soon as
+  it is 95% sure a change is worth something (PASSED) or isn't worth 10 Elo
+  (FAILED). Games count in pairs (the pentanomial model), which cancels most
+  of the luck of the openings.
+
+The **Engine match** workflow runs `scripts/match.py` on GitHub's machine:
+Actions → Engine match → Run workflow, give the two revisions (or
+`stockfish:ELO`), and the verdict appears on the run's page with the games as
+a download.
+
+Ideas worth testing this way: static exchange evaluation (SEE) to prune bad
 captures, aspiration windows, mobility in the evaluation, and tuning the
 evaluation weights with self-play.
 
