@@ -43,7 +43,7 @@ old search on the old one, until the score was even within the error bars
     Skilled       1,500        1,500      +7 +- 30   (400 games)
     Strong       12,000        6,000     +15 +- 30   (400 games; 7,000: +27)
     Expert       40,000       18,000      -5 +- 39   (200 games; 22,000: +63)
-    Summer       60,000       28,000     -14 +- 43   (150 games at 27,000; 24,000: -21)
+    Summer       60,000       28,000     between 27,000: -14 +- 43 and 33,000: +47 +- 48 (150 games each)
 
 The lower levels choose among a shallow search's moves and barely changed
 (the same first choice in 181 to 185 of 185 test positions).
