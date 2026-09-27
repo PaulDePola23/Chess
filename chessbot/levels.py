@@ -31,6 +31,22 @@ rounded to 50:
 Treat them as rough: Stockfish's scale is not the same as any online site's,
 and the levels below Stockfish's minimum of 1320 are extrapolated from games
 between levels.
+
+Those ratings were measured with an earlier search. When futility pruning,
+late move pruning and aspiration windows made it stronger for the same number
+of nodes, the node budgets were matched again so that each level still plays
+as it did when it was measured: the new search on the new budget against the
+old search on the old one, until the score was even within the error bars
+(``scripts/match.py --base-nodes``):
+
+    level      old budget   new budget   new vs old
+    Skilled       1,500        1,500      +7 +- 30   (400 games)
+    Strong       12,000        6,000     +15 +- 30   (400 games; 7,000: +27)
+    Expert       40,000       18,000      -5 +- 39   (200 games; 22,000: +63)
+    Summer       60,000       28,000     -14 +- 43   (150 games at 27,000; 24,000: -21)
+
+The lower levels choose among a shallow search's moves and barely changed
+(the same first choice in 181 to 185 of 185 test positions).
 """
 
 from __future__ import annotations
@@ -104,14 +120,14 @@ LEVELS = [
         description="Rarely blunders. Beat it with tactics and a plan.",
     ),
     Level(5, "Skilled", 1450, nodes=1_500, book=True, description="Looks a few moves ahead and punishes loose pieces."),
-    Level(6, "Strong", 1750, nodes=12_000, book=True, description="Sees most tactics. You'll need a real advantage."),
-    Level(7, "Expert", 1950, nodes=40_000, book=True, description="The full engine at a brisk pace. Hard to beat."),
+    Level(6, "Strong", 1750, nodes=6_000, book=True, description="Sees most tactics. You'll need a real advantage."),
+    Level(7, "Expert", 1950, nodes=18_000, book=True, description="The full engine at a brisk pace. Hard to beat."),
     # The last three are named after two dogs and a cat.
     Level(
         8,
         "Summer",
         2100,
-        nodes=60_000,
+        nodes=28_000,
         book=True,
         description="Named after Summer the dog.",
     ),

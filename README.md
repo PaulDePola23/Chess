@@ -97,9 +97,9 @@ private repo needs a paid GitHub plan), then re-run the workflow.
 | Casual | ~800 | 2-ply search, some randomness, a random move 3% of the time |
 | Club | ~1150 | 2-ply search, a little randomness |
 | Skilled | ~1450 | full search, 1,500 positions a move |
-| Strong | ~1750 | full search, 12,000 positions a move |
-| Expert | ~1950 | full search, 40,000 positions a move |
-| Summer | ~2100 | full search, 60,000 positions a move (about 8 seconds in the browser) |
+| Strong | ~1750 | full search, 6,000 positions a move |
+| Expert | ~1950 | full search, 18,000 positions a move |
+| Summer | ~2100 | full search, 28,000 positions a move (about 4 seconds in the browser) |
 | Titan | 2500 | Stockfish with `UCI_Elo` 2500, a second a move |
 | Pinky | 2700 | Stockfish with `UCI_Elo` 2700, a second a move |
 
@@ -247,20 +247,23 @@ and `infinite`, plus `stop`. The options are `Hash` (MB) and `Move Overhead` (ms
 
 ## How strong is it?
 
-The full engine's strength depends on how long it thinks. Measured against
-Stockfish 16 with `UCI_LimitStrength` (the calibration behind the levels
-table above, 20–24 games per pairing):
+The full engine's strength depends on how many positions it looks at. The
+ratings were measured against Stockfish 16 with `UCI_LimitStrength` (20–24
+games per pairing) and carried over to the current search, which needs fewer
+positions for the same strength, by matching node budgets in games between
+the two versions (`chessbot/levels.py` has the details):
 
 | Positions a move | Time natively | Rating (Stockfish's scale) |
 | ---------------- | ------------- | -------------------------- |
-| 1,500            | 0.06 s        | ~1450 (Skilled)            |
-| 12,000           | 0.5 s         | ~1750 (Strong)             |
-| 40,000           | 1.6 s         | ~1950 (Expert)             |
-| 60,000           | 2.4 s         | ~2100 (Summer)             |
-| 80,000           | 3.2 s         | ~2230                      |
+| 1,500            | 0.07 s        | ~1450 (Skilled)            |
+| 6,000            | 0.25 s        | ~1750 (Strong)             |
+| 18,000           | 0.7 s         | ~1950 (Expert)             |
+| 28,000           | 1.2 s         | ~2100 (Summer)             |
 
-It searches about 25,000 positions a second in Python, three to four times
-slower in the browser. The pawn-structure, rook and king-shelter terms in the
+It searches about 20,000 positions a second in Python, three to four times
+slower in the browser. Futility pruning, late move pruning and aspiration
+windows made it about 40 Elo stronger at the same thinking time (726 games at
+150 ms a move). The pawn-structure, rook and king-shelter terms in the
 evaluation were worth about 50 Elo on their own (58 wins, 22 draws and 40
 losses against the previous evaluation at the same node count).
 

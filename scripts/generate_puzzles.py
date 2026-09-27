@@ -60,7 +60,8 @@ def only_move(infos: list[dict], pov: chess.Color):
 def estimate_rating(board: chess.Board, answer: chess.Move, solver_moves: int, mate: bool) -> int:
     """The weakest engine budget that finds the answer sets the base rating."""
     rating = 2150
-    for nodes, found_at in ((200, 900), (1_500, 1200), (12_000, 1550), (40_000, 1850)):
+    # 1,500, 6,000 and 18,000 nodes are the Skilled, Strong and Expert levels.
+    for nodes, found_at in ((200, 900), (1_500, 1200), (6_000, 1550), (18_000, 1850)):
         if Searcher().search(board, nodes=nodes).best_move == answer:
             rating = found_at
             break
