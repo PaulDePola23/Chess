@@ -36,6 +36,14 @@ EXACT, LOWER_BOUND, UPPER_BOUND = 0, 1, 2
 # How often (in nodes) to look at the clock and the stop flag.
 CHECK_INTERVAL = 1024
 
+# Pruning near the leaves, in centipawns (a pawn is 100). Reverse futility:
+# a position this far above beta per remaining ply is cut off. Futility:
+# quiet moves that would need more than this to lift the score to alpha
+# aren't searched.
+RFP_DEPTH = 3
+RFP_MARGIN = 100
+FUTILITY_MARGINS = {1: 150, 2: 300}
+
 
 class SearchAborted(Exception):
     """Raised inside the search when time is up or a stop was requested."""
@@ -314,17 +322,30 @@ class Searcher:
                 if entry_flag == UPPER_BOUND and entry_score <= alpha:
                     return entry_score
 
+        # The static evaluation, for the pruning below (outside the principal
+        # variation, and not in check, where it means little).
+        static_eval = None if in_check or is_pv_node else self.evaluate(board)
+
+        # Reverse futility pruning: near the leaves, a position this far above
+        # beta won't fall below it in the few plies left.
+        if (
+            static_eval is not None
+            and depth <= RFP_DEPTH
+            and abs(beta) < MATE_THRESHOLD
+            and static_eval - RFP_MARGIN * depth >= beta
+        ):
+            return static_eval
+
         # Null move pruning: if we are so far ahead that even passing keeps us
         # above beta, a real move will too. Skipped when in check and in pawn
         # endgames, where zugzwang makes passing a genuine advantage.
         if (
             allow_null
-            and not is_pv_node
-            and not in_check
+            and static_eval is not None
             and depth >= 3
             and abs(beta) < MATE_THRESHOLD
             and board.occupied_co[board.turn] & ~(board.pawns | board.kings)
-            and self.evaluate(board) >= beta
+            and static_eval >= beta
         ):
             reduction = 3 if depth >= 6 else 2
             self._push(chess.Move.null())
@@ -340,6 +361,14 @@ class Searcher:
             return -MATE_SCORE + ply if in_check else 0
         self._order_moves(moves, tt_move, ply)
 
+        # Futility pruning: this close to the leaves, a quiet move can't make up
+        # a deficit this large, so after the first move only captures,
+        # promotions and checks are searched.
+        futility = None
+        if static_eval is not None and depth in FUTILITY_MARGINS and abs(alpha) < MATE_THRESHOLD:
+            if static_eval + FUTILITY_MARGINS[depth] <= alpha:
+                futility = static_eval + FUTILITY_MARGINS[depth]
+
         original_alpha = alpha
         best_score = -INFINITY
         best_move = None
@@ -347,6 +376,9 @@ class Searcher:
             quiet = not board.is_capture(move) and not move.promotion
             self._push(move)
             try:
+                if futility is not None and index > 0 and quiet and not board.is_check():
+                    best_score = max(best_score, futility)
+                    continue
                 if index == 0:
                     score = -self._negamax(depth - 1, -beta, -alpha, ply + 1)
                 else:
