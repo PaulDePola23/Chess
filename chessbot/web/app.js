@@ -1423,10 +1423,10 @@
     $(`${prefix}-rating-block`).hidden = rating === null;
     $(`${prefix}-rating-note`).hidden = rating === null;
     if (rating === null) return;
-    const like = LEVELS.reduce((a, b) => (Math.abs(b.elo - rating) < Math.abs(a.elo - rating) ? b : a));
     $(`${prefix}-rating`).textContent = `~${rating}`;
     $(`${prefix}-rating-note`).textContent =
-      `You played about as well as ${like.name} (${like.elo}) this game: roughly the rating you'd have if you always played like this.`;
+      `Players rated about ${rating} on lichess (rapid) average this accuracy, so that's roughly where ` +
+      "you'd be if you always played like this. One game's number swings a lot.";
   }
 
   function reviewSummary(items) {
@@ -2260,6 +2260,12 @@
     });
   }
 
+  // "~1150" for an average accuracy over several games, or "–".
+  function gameRatingText(accuracy) {
+    const rating = typeof accuracy === "number" ? gameRating(accuracy, GAME_RATING_MOVES) : null;
+    return rating === null ? "–" : `~${rating}`;
+  }
+
   // "~1150" after a saved game's accuracy (the game's moves stand in for the number reviewed).
   function gameRatingTag(g) {
     const rating = typeof g.accuracy === "number" ? gameRating(g.accuracy, g.moves) : null;
@@ -2279,6 +2285,7 @@
       tile("Games", String(p.count), wdl(p) + " (W–D–L)"),
       tile("Score", pct(p.score)),
       tile("Accuracy", acc(p.accuracy), "average over reviewed games"),
+      tile("Game rating", gameRatingText(p.accuracy), "what your average accuracy is worth"),
       tile("Blunders per game", p.blunders === null ? "–" : p.blunders.toFixed(1)),
       tile(
         "Puzzle rating",
