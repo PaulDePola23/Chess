@@ -3,8 +3,10 @@
 The four lower levels score the reasonable moves with a shallow search and
 pick one at random, favouring better moves: the higher the ``temperature``
 (in centipawns), the more often a weaker move gets picked. On top of that
-the lowest levels sometimes play a random legal move (``blunder_rate``),
-which is how they end up hanging pieces the way beginners do.
+they sometimes play a random legal move (``blunder_rate``), and Rookie and
+Novice often judge the moves at a glance (``glance_rate``, see ``glance``):
+by how the board looks right after each one, without thinking about the
+reply. That is how beginners grab defended pawns and leave pieces hanging.
 
 Skilled, Strong, Expert and Summer use the full search, capped by a node
 count rather than a time limit so that they play just as well in a slow
@@ -19,18 +21,31 @@ The Elo figures come from matches against Stockfish 16 with
 rounded to 50:
 
     level      measured    games that pinned it down
-    Rookie      ~180       9.5/70 vs Novice
-    Novice      ~500       10.5/70 vs Casual
-    Casual      ~800       9/120 vs Club, 7.5/120 vs SF1320 (three runs: 890, 782, 756)
     Club       1163 +- 55  6.5/20 vs SF1320, 2/20 vs Skilled
     Skilled    1455 +- 55  14.5/20 vs SF1320, 1.5/20 vs Strong
     Strong     1730 +- 43  18/20 vs SF1320, 12/20 vs SF1600, 3/20 vs Expert
     Expert     1949 +- 47  13/20 vs SF1600, 14/20 vs SF1900
     Summer     2096 +- 45  15.5/24 vs Expert, 16/24 vs SF1900, 12/24 vs SF2200
 
-Treat them as rough: Stockfish's scale is not the same as any online site's,
-and the levels below Stockfish's minimum of 1320 are extrapolated from games
-between levels.
+Treat them as rough: Stockfish's scale is not the same as any online site's.
+
+Below Club the levels are set by the mistakes they make, because a chain of
+games between weak bots put the first Rookie at about 200 when it played more
+like 600 to 800 (1.5/40 against Club). The three lowest were rebuilt, and
+the old Rookie became Casual. Their share of moves that Stockfish calls
+blunders (the review's lichess thresholds), in 150 middlegame and endgame
+positions, and their games against the next level up:
+
+    level      blunders   average loss   games
+    Rookie        42%       259 cp      4.5/40 vs Novice
+    Novice        33%       220 cp        8/40 vs Casual
+    Casual        23%       149 cp      1.5/40 vs Club
+    Club          12%        74 cp
+
+Fitted with Club held at 1150, those games give Rookie about 50, Novice 400
+and Casual 630. The labels are higher because games between bots understate
+how strong a bot feels to a person: the old Rookie, 630 by this measure, felt
+like about 800 to play against.
 
 Those ratings were measured with an earlier search. When futility pruning,
 late move pruning and aspiration windows made it stronger for the same number

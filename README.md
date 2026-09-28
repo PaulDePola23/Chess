@@ -92,9 +92,9 @@ private repo needs a paid GitHub plan), then re-run the workflow.
 
 | Level | Rating | How it plays |
 | ----- | ------ | ------------ |
-| Rookie | ~200 | 1-ply search, lots of randomness, a random move 12% of the time |
-| Novice | ~500 | 1-ply search, a little randomness, a random move 4% of the time |
-| Casual | ~800 | 2-ply search, some randomness, a random move 3% of the time |
+| Rookie | ~200 | judges every move at a glance, never thinking about your reply; lots of randomness, a random move 30% of the time |
+| Novice | ~500 | glances at half its moves, checks your reply on the others; some randomness, a random move 10% of the time |
+| Casual | ~800 | 1-ply search that sees your replies; lots of randomness, a random move 12% of the time |
 | Club | ~1150 | 2-ply search, a little randomness |
 | Skilled | ~1450 | full search, 1,500 positions a move |
 | Strong | ~1750 | full search, 6,000 positions a move |
@@ -112,14 +112,17 @@ Worker, loaded the first time one of them plays, and holds it to their rating wi
 Stockfish's own `UCI_LimitStrength`. Club and up open from the opening book.
 
 The lower levels score the reasonable moves with a shallow search and pick
-one at random, favouring the better ones. The upper levels use the full
+one at random, favouring the better ones; Rookie and Novice often don't look
+at your reply at all, so they hang pieces like beginners do. The upper levels use the full
 search with a fixed node budget, so they play equally well in the browser
 and natively. The ratings were measured with `scripts/calibrate_levels.py`,
 which plays the levels against each other and against Stockfish 16 at fixed
 `UCI_Elo` settings (20 to 70 games per pairing; the full results are in
 `chessbot/levels.py`). They're rough, on Stockfish's rating scale (which
-doesn't match any online site exactly), and the ones below Stockfish's
-minimum of 1320 are extrapolated from games between levels.
+doesn't match any online site exactly). Below Club the levels are set by how
+often they blunder (Rookie 42% of its moves, Novice 33%, Casual 23%, Club
+12%), because games between weak bots had made the first Rookie look like a
+200 when it played more like an 800.
 
 A player's rating is an Elo, like the puzzle rating: everyone starts at
 1000 and each rated game moves it up or down depending on the level they
