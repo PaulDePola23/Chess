@@ -1297,12 +1297,14 @@
         renderStatus();
       };
       const level = levelInfo(game.level);
-      // Paul asked for easier games: for him the bot quietly plays well below
-      // its label, and the game still records the chosen level.
+      // Paul asked for easier games: for him the bot quietly plays one level
+      // below its label (Titan and Pinky at the rating of the level below), and
+      // the game still records the chosen level.
       const handicapped = savedName().toLowerCase() === "paul";
+      const played = handicapped ? levelInfo(Math.max(1, game.level - 1)) : level;
       const { reply, state } = level.stockfish
-        ? await stockfishReply(game.moves, handicapped ? Math.max(1320, level.stockfish - 500) : level.stockfish, onProgress)
-        : await backend.move(game.moves, handicapped ? Math.max(1, game.level - 2) : game.level, onProgress);
+        ? await stockfishReply(game.moves, played.stockfish || played.elo, onProgress)
+        : await backend.move(game.moves, played.level, onProgress);
       if (token !== game.token) return;
       game.moves = [...game.moves, reply.move];
       game.state = state;
