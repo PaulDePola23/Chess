@@ -288,10 +288,17 @@
         <div class="meter"><div class="meter-fill" id="review-meter"></div></div>
       </div>
       <div id="review-summary" hidden>
-        <div class="review-score">
-          <span class="review-accuracy" id="review-accuracy">–</span>
-          <span class="review-accuracy-label">accuracy</span>
+        <div class="review-scores">
+          <div class="review-score">
+            <span class="review-accuracy" id="review-accuracy">–</span>
+            <span class="review-accuracy-label">accuracy</span>
+          </div>
+          <div class="review-score" id="review-rating-block" hidden>
+            <span class="review-accuracy" id="review-rating">–</span>
+            <span class="review-accuracy-label">game rating</span>
+          </div>
         </div>
+        <p class="review-rating-note" id="review-rating-note" hidden></p>
         <ul class="verdict-counts" id="review-counts"></ul>
         <h3 id="review-list-title">Biggest mistakes</h3>
         <p class="review-viewing" id="review-viewing" hidden>
@@ -578,10 +585,17 @@
           <button type="button" class="primary" id="viewer-review">Review this game</button>
           <p class="review-progress-text" id="viewer-review-status" hidden></p>
           <div id="viewer-review-summary" hidden>
-            <div class="review-score">
-              <span class="review-accuracy" id="viewer-accuracy">–</span>
-              <span class="review-accuracy-label">accuracy</span>
+            <div class="review-scores">
+              <div class="review-score">
+                <span class="review-accuracy" id="viewer-accuracy">–</span>
+                <span class="review-accuracy-label">accuracy</span>
+              </div>
+              <div class="review-score" id="viewer-rating-block" hidden>
+                <span class="review-accuracy" id="viewer-rating">–</span>
+                <span class="review-accuracy-label">game rating</span>
+              </div>
             </div>
+            <p class="review-rating-note" id="viewer-rating-note" hidden></p>
             <ul class="verdict-counts" id="viewer-counts"></ul>
             <ol class="mistakes" id="viewer-mistakes"></ol>
           </div>

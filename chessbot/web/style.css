@@ -583,7 +583,10 @@ button.primary:hover:not(:disabled) { border-color: var(--ink); }
 .review-progress p { margin: 0 0 8px; color: var(--muted); font-size: 14px; }
 .meter { height: 6px; border-radius: 3px; background: var(--surface-2); overflow: hidden; }
 .meter-fill { height: 100%; width: 0; background: var(--accent-strong); transition: width 0.3s ease; }
+.review-scores { display: flex; flex-wrap: wrap; gap: 6px 28px; }
 .review-score { display: flex; align-items: baseline; gap: 8px; }
+.review-rating-note { margin: 6px 0 0; color: var(--muted); font-size: 14px; }
+.game-rating { margin-left: 6px; color: var(--muted); font-size: 12px; }
 .review-accuracy { font: 700 40px/1 var(--sans); font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
 .review-accuracy-label { color: var(--muted); font-size: 14px; }
 .verdict-counts { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }

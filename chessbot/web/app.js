@@ -898,6 +898,7 @@
 
     const summary = reviewSummary(r.items);
     $("review-accuracy").textContent = summary.accuracy === null ? "–" : `${summary.accuracy.toFixed(0)}%`;
+    showGameRating("review", summary, r.items.length);
     const counts = $("review-counts");
     counts.textContent = "";
     const plurals = { blunder: "blunders", mistake: "mistakes", inaccuracy: "inaccuracies" };
@@ -1396,6 +1397,36 @@
     }
     if (!game.recorded) recordGame(game.review.status === "done" ? game.review.items : null);
     render();
+  }
+
+  // A game's accuracy as a rating: about the rating of players who play that
+  // accurately (chessbot/game_rating.py). A guide to one game, not a rating.
+  const GAME_RATING_MOVES = 8; // fewer moves say too little
+  function gameRating(accuracy, moves) {
+    const points = CONFIG.gameRating || [];
+    if (accuracy === null || accuracy === undefined || moves < GAME_RATING_MOVES || !points.length) return null;
+    if (accuracy <= points[0][0]) return points[0][1];
+    for (let i = 1; i < points.length; i++) {
+      const [highAccuracy, highRating] = points[i];
+      if (accuracy <= highAccuracy) {
+        const [lowAccuracy, lowRating] = points[i - 1];
+        const share = (accuracy - lowAccuracy) / (highAccuracy - lowAccuracy);
+        return Math.round((lowRating + share * (highRating - lowRating)) / 50) * 50;
+      }
+    }
+    return points[points.length - 1][1];
+  }
+
+  // Shows a review's game rating in the "review" or "viewer" panel.
+  function showGameRating(prefix, summary, moves) {
+    const rating = gameRating(summary.accuracy, moves);
+    $(`${prefix}-rating-block`).hidden = rating === null;
+    $(`${prefix}-rating-note`).hidden = rating === null;
+    if (rating === null) return;
+    const like = LEVELS.reduce((a, b) => (Math.abs(b.elo - rating) < Math.abs(a.elo - rating) ? b : a));
+    $(`${prefix}-rating`).textContent = `~${rating}`;
+    $(`${prefix}-rating-note`).textContent =
+      `You played about as well as ${like.name} (${like.elo}) this game: roughly the rating you'd have if you always played like this.`;
   }
 
   function reviewSummary(items) {
@@ -2229,6 +2260,12 @@
     });
   }
 
+  // "~1150" after a saved game's accuracy (the game's moves stand in for the number reviewed).
+  function gameRatingTag(g) {
+    const rating = typeof g.accuracy === "number" ? gameRating(g.accuracy, g.moves) : null;
+    return rating === null ? null : el("span", { class: "game-rating", text: `~${rating}`, title: "game rating" });
+  }
+
   function renderPlayer(p) {
     $("player-title").textContent = p.name;
     const tiles = $("player-tiles");
@@ -2295,7 +2332,12 @@
             isRated(g) ? null : el("span", { class: "provisional", text: " · unrated" }),
           ),
           el("td", { class: "num", text: String(g.moves) }),
-          el("td", { class: "num", text: typeof g.accuracy === "number" ? acc(g.accuracy) : "–" }),
+          el(
+            "td",
+            { class: "num" },
+            typeof g.accuracy === "number" ? acc(g.accuracy) : "–",
+            gameRatingTag(g),
+          ),
           el("td", { class: "num", text: typeof g.blunders === "number" ? String(g.blunders) : "–" }),
         ),
       );
@@ -2601,6 +2643,7 @@
   function renderViewerReview() {
     const summary = reviewSummary(viewer.review.items);
     $("viewer-accuracy").textContent = summary.accuracy === null ? "–" : `${summary.accuracy.toFixed(0)}%`;
+    showGameRating("viewer", summary, viewer.review.items.length);
     const counts = $("viewer-counts");
     counts.textContent = "";
     const plurals = { blunder: "blunders", mistake: "mistakes", inaccuracy: "inaccuracies" };
