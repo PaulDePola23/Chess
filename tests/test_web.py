@@ -337,9 +337,10 @@ def test_server_serves_icons_and_manifest(server):
 def test_the_site_calls_only_functions_the_setup_sql_defines():
     root = pathlib.Path(__file__).resolve().parent.parent
     app = (root / "chessbot" / "web" / "app.js").read_text()
-    called = set(re.findall(r'(?:rpc|friendAction|signIn)\("(\w+)"', app))
+    called = set(re.findall(r'(?:rpc|friendAction|signIn|mine)\(\s*"(\w+)"', app))
     assert {"create_live_game", "join_live_game", "play_live_move", "resign_live_game", "live_game_draw"} <= called
     assert {"claim_name", "sign_in", "sign_out", "session_name", "name_taken", "record_game"} <= called
+    assert {"my_games", "my_puzzle_attempts", "player_options", "set_player_options", "hidden_players"} <= called
     setup = (root / "supabase" / "games.sql").read_text()
     upgrades = "\n".join(path.read_text() for path in sorted((root / "supabase").glob("upgrade-*.sql")))
     for sql in (setup, upgrades):

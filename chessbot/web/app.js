@@ -100,6 +100,9 @@
       async namesLocked() {
         return false; // names only matter in this browser
       },
+      async hiddenPlayers() {
+        return [];
+      },
       async listPuzzleAttempts() {
         return storageGet(PUZZLE_KEY, []);
       },
@@ -123,6 +126,10 @@
   // claimed it with a password, and games and puzzle attempts go in through
   // database functions that put the signed-in name on them. Until that SQL has
   // been run, names are free and rows go straight into the tables.
+  //
+  // Privacy (supabase/upgrade-5.sql): a private player's games and puzzle
+  // attempts can't be read by anyone else, so the signed-in player's own come
+  // from my_games and my_puzzle_attempts and are merged in.
   function supabaseStore({ url, key }) {
     const PENDING = "chessbot.pending.v1";
     const headers = { apikey: key, "Content-Type": "application/json" };
@@ -138,6 +145,7 @@
     // answers 404 for its tables and functions until that has been run.
     const NOT_SET_UP = "Online games aren't switched on for this site yet (supabase/upgrade-3.sql).";
     const NO_NAMES = "Names aren't locked on this site yet (supabase/upgrade-4.sql).";
+    const NO_PRIVACY = "Privacy settings aren't switched on for this site yet (supabase/upgrade-5.sql).";
 
     async function rpc(name, args, { notSetUp = NOT_SET_UP, keepalive = false } = {}) {
       const response = await fetch(`${url}/rest/v1/rpc/${name}`, {
@@ -247,6 +255,23 @@
       storageSet(PENDING, left);
     }
 
+    // The signed-in player's own rows from one of the my_* functions ([] without them).
+    async function mine(name) {
+      try {
+        if (!account || !(await namesLocked())) return [];
+        return (await rpc(name, { p_token: account.token }, { notSetUp: NO_PRIVACY })) || [];
+      } catch {
+        return [];
+      }
+    }
+
+    // Everyone's public rows plus the signed-in player's own, newest first.
+    function withMine(rows, own) {
+      const ids = new Set(rows.map((row) => row.id));
+      const merged = [...rows, ...own.filter((row) => !ids.has(row.id))];
+      return merged.sort((a, b) => (a.played_at < b.played_at ? 1 : a.played_at > b.played_at ? -1 : 0));
+    }
+
     async function liveGames(ids) {
       if (!ids.length) return [];
       const response = await fetch(`${url}/rest/v1/live_games?id=in.(${ids.join(",")})&select=*`, {
@@ -279,17 +304,50 @@
       // Puzzle attempts need the puzzle_attempts table (supabase/upgrade-2.sql);
       // without it they stay in this browser only.
       async listPuzzleAttempts() {
-        const response = await fetch(`${url}/rest/v1/puzzle_attempts?select=*&order=played_at.desc&limit=5000`, { headers });
-        return response.ok ? response.json() : [];
+        const [response, own] = await Promise.all([
+          fetch(`${url}/rest/v1/puzzle_attempts?select=*&order=played_at.desc&limit=5000`, { headers }),
+          mine("my_puzzle_attempts"),
+        ]);
+        return withMine(response.ok ? await response.json() : [], own);
       },
       // The latest saved puzzle attempt under this name (any capitalisation), or null.
       async latestPuzzleAttempt(player) {
         const name = player.trim();
         const query = `player=ilike.${encodeURIComponent(name)}&select=player,rating_after,played_at&order=played_at.desc&limit=20`;
-        const response = await fetch(`${url}/rest/v1/puzzle_attempts?${query}`, { headers, cache: "no-store" });
-        if (!response.ok) return null;
-        const rows = await response.json();
+        const own = account && account.name.toLowerCase() === name.toLowerCase();
+        const [response, mineRows] = await Promise.all([
+          fetch(`${url}/rest/v1/puzzle_attempts?${query}`, { headers, cache: "no-store" }),
+          own ? mine("my_puzzle_attempts") : [],
+        ]);
+        if (!response.ok && !mineRows.length) return null;
+        const rows = withMine(response.ok ? await response.json() : [], mineRows);
         return rows.find((row) => row.player.trim().toLowerCase() === name.toLowerCase()) || null;
+      },
+      // The signed-in player's privacy settings, {private, on_scoreboard}; null
+      // when the site doesn't have them yet (or nobody is signed in).
+      async playerOptions() {
+        if (!(await namesLocked()) || !account) return null;
+        try {
+          return await rpc("player_options", { p_token: account.token }, { notSetUp: NO_PRIVACY });
+        } catch (error) {
+          if (error.message === NO_PRIVACY) return null;
+          throw error;
+        }
+      },
+      setPlayerOptions: ({ private: hidden, onScoreboard }) =>
+        rpc(
+          "set_player_options",
+          { p_token: account && account.token, p_private: hidden, p_on_scoreboard: onScoreboard },
+          { notSetUp: NO_PRIVACY },
+        ),
+      // Names of players who left the scoreboard.
+      async hiddenPlayers() {
+        try {
+          const rows = (await rpc("hidden_players", {}, { notSetUp: NO_PRIVACY })) || [];
+          return rows.map((row) => (typeof row === "string" ? row : Object.values(row)[0]));
+        } catch {
+          return [];
+        }
       },
       async savePuzzleAttempt(record, { token = null } = {}) {
         if (await namesLocked()) {
@@ -304,9 +362,12 @@
       },
       async list() {
         await flushPending();
-        const response = await fetch(`${url}/rest/v1/games?select=*&order=played_at.desc&limit=5000`, { headers });
+        const [response, own] = await Promise.all([
+          fetch(`${url}/rest/v1/games?select=*&order=played_at.desc&limit=5000`, { headers }),
+          mine("my_games"),
+        ]);
         if (!response.ok) throw new Error(`Couldn't load stats (${response.status}).`);
-        return response.json();
+        return withMine(await response.json(), own);
       },
       async save(record, { keepalive = false, token = null } = {}) {
         try {
@@ -1515,6 +1576,71 @@
   };
   let lookupTimer = null;
 
+  // Who sees the signed-in player's games (supabase/upgrade-5.sql): null until
+  // loaded, and while the site doesn't have the settings yet.
+  const privacy = { options: null, busy: false, error: null };
+
+  async function loadPrivacy() {
+    privacy.options = null;
+    privacy.error = null;
+    if (accountToken() && stats.playerOptions) {
+      try {
+        privacy.options = await stats.playerOptions();
+      } catch {
+        // Offline: the switches stay hidden until the next sign-in or reload.
+      }
+    }
+    renderAccount();
+  }
+
+  async function changePrivacy(changes) {
+    if (!privacy.options || privacy.busy) return;
+    const before = privacy.options;
+    // Show the change at once; it goes back if the database turns it down.
+    privacy.options = {
+      ...before,
+      ...("private" in changes ? { private: changes.private } : {}),
+      ...("onScoreboard" in changes ? { on_scoreboard: changes.onScoreboard } : {}),
+    };
+    privacy.busy = true;
+    privacy.error = null;
+    renderAccount();
+    try {
+      privacy.options = await stats.setPlayerOptions(changes);
+      statsCache = null; // the Stats page shows the change on its next load
+    } catch (error) {
+      privacy.options = before;
+      privacy.error = friendError(error);
+    } finally {
+      privacy.busy = false;
+      renderAccount();
+    }
+  }
+
+  function renderPrivacy() {
+    const options = accountToken() ? privacy.options : null;
+    $("account-options").hidden = !options;
+    if (!options) return;
+    const hidden = $("option-private");
+    const listed = $("option-scoreboard");
+    hidden.checked = options.private;
+    listed.checked = options.on_scoreboard && !options.private;
+    hidden.disabled = privacy.busy;
+    listed.disabled = privacy.busy || options.private;
+    $("options-note").textContent =
+      privacy.error ||
+      (options.private
+        ? "Only you can see your games, stats and replays."
+        : options.on_scoreboard
+          ? "Everyone can see your games on the Stats page."
+          : "You're left out of the scoreboard. Your games still count for your own rating.");
+  }
+
+  $("option-private").addEventListener("change", (event) => changePrivacy({ private: event.target.checked }));
+  $("option-scoreboard").addEventListener("change", (event) =>
+    changePrivacy({ onScoreboard: event.target.checked }),
+  );
+
   function renderAccount() {
     const form = accountForm;
     const signedIn = Boolean(accountToken());
@@ -1524,6 +1650,7 @@
     $("player-name").autocomplete = namesLocked ? "username" : "nickname";
     $("account-error").hidden = !form.error;
     $("account-error").textContent = form.error || "";
+    renderPrivacy();
     if (signedIn) {
       $("account-name").textContent = savedName();
       return;
@@ -1597,6 +1724,7 @@
       $("player-password").value = "";
       accountForm.status = null;
       syncPuzzleRating();
+      loadPrivacy();
       if (stats.flush) stats.flush().catch(() => {});
     } catch (error) {
       accountForm.error = friendError(error);
@@ -1609,6 +1737,7 @@
   $("sign-out").addEventListener("click", () => {
     if (account) stats.signOut(account.token).catch(() => {});
     account = null;
+    privacy.options = null;
     accountChanged();
     nameChanged();
   });
@@ -1630,6 +1759,7 @@
     }
     accountChanged();
     if (namesLocked && !account && playerName.trim()) lookupName();
+    if (account) loadPrivacy();
   }
 
   $("player-name").value = playerName;
@@ -1865,6 +1995,18 @@
   let statsCache = null;
   let statsLoadedAt = 0;
   let puzzleCache = [];
+  // Lower-case names of players who left the scoreboard (see privacy above).
+  let hiddenPlayers = new Set();
+
+  // Everyone's games minus those of players who left the scoreboard; your own
+  // always count on your screen.
+  function listedGames(games) {
+    const me = savedName().toLowerCase();
+    return games.filter((g) => {
+      const name = g.player.trim().toLowerCase();
+      return name === me || !hiddenPlayers.has(name);
+    });
+  }
 
   // Each player's latest puzzle rating and number of puzzles tried, keyed by lower-case name.
   function puzzleRatings() {
@@ -1883,7 +2025,7 @@
 
   async function loadStats(force = false) {
     $("stats-source").textContent = stats.shared
-      ? "Everyone's games, shared online."
+      ? "Everyone's games, shared online, apart from players who keep theirs private."
       : "Games played in this browser. Connect a database to share stats between everyone (see the README).";
     const message = $("stats-message");
     // Reload data more than a minute old, so games and changes from elsewhere show up.
@@ -1891,9 +2033,14 @@
       message.hidden = false;
       message.textContent = "Loading…";
       try {
-        const [games, attempts] = await Promise.all([stats.list(), stats.listPuzzleAttempts().catch(() => [])]);
-        puzzleCache = attempts;
-        statsCache = currentGames(games);
+        const [games, attempts, hidden] = await Promise.all([
+          stats.list(),
+          stats.listPuzzleAttempts().catch(() => []),
+          stats.hiddenPlayers(),
+        ]);
+        hiddenPlayers = new Set(hidden.map((name) => name.trim().toLowerCase()));
+        puzzleCache = listedGames(attempts);
+        statsCache = listedGames(currentGames(games));
         statsLoadedAt = Date.now();
         message.hidden = true;
       } catch (error) {
@@ -2000,6 +2147,15 @@
     return el("span", {}, String(s.rating), s.provisional ? el("span", { class: "provisional", text: "?" }) : null);
   }
 
+  // On your own row: a reminder that others don't see it.
+  function rowTag(name) {
+    const options = privacy.options;
+    if (!options || name.toLowerCase() !== savedName().toLowerCase()) return null;
+    if (options.private) return el("span", { class: "row-tag", text: "private, only you see this" });
+    if (!options.on_scoreboard) return el("span", { class: "row-tag", text: "hidden from others" });
+    return null;
+  }
+
   function renderStats() {
     const games = statsCache || [];
     const players = summarizePlayers(games).sort(
@@ -2052,7 +2208,12 @@
           "tr",
           { class: "clickable", onclick: open },
           el("td", { class: "num", text: String(i + 1) }),
-          el("td", {}, el("button", { type: "button", class: "player-link", text: p.name, onclick: open })),
+          el(
+            "td",
+            {},
+            el("button", { type: "button", class: "player-link", text: p.name, onclick: open }),
+            rowTag(p.name),
+          ),
           el("td", { class: "num" }, ratingCell(p)),
           el("td", { class: "num", text: p.puzzles ? String(p.puzzles.rating) : "–" }),
           el("td", { class: "num", text: String(p.count) }),
@@ -3435,7 +3596,11 @@
   async function loadHomeStats() {
     if (!stats.shared) return;
     try {
-      if (!statsCache) statsCache = currentGames(await stats.list());
+      if (!statsCache) {
+        const [games, hidden] = await Promise.all([stats.list(), stats.hiddenPlayers()]);
+        hiddenPlayers = new Set(hidden.map((name) => name.trim().toLowerCase()));
+        statsCache = listedGames(currentGames(games));
+      }
     } catch {
       return;
     }

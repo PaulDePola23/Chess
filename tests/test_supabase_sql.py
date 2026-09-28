@@ -222,6 +222,38 @@ def test_online_games_keep_claimed_names_for_their_owners(postgres, db):
     assert call(postgres, db, f"public.join_live_game('{game_id}', '{'b' * 24}', 'Guest')") == "black"
 
 
+def test_a_private_player_is_the_only_one_who_sees_their_games(postgres, db):
+    token = claim(postgres, db, "Bishop", "diagonal")["token"]
+    call(postgres, db, f"public.record_game('{token}', {game()})")
+    attempt = json.dumps({"id": str(uuid.uuid4()), "puzzle_id": "p2", "puzzle_rating": 900, "solved": True,
+                          "rating_after": 1010})  # fmt: skip
+    call(postgres, db, f"public.record_puzzle_attempt('{token}', '{attempt}'::jsonb)")
+
+    def visible(table):
+        return call(postgres, db, f"count(*) from public.{table} where player = 'Bishop'")
+
+    assert json.loads(call(postgres, db, f"public.player_options('{token}')")) == {
+        "name": "Bishop", "private": False, "on_scoreboard": True,
+    }  # fmt: skip
+    assert visible("games") == "1" and visible("puzzle_attempts") == "1"
+
+    options = json.loads(call(postgres, db, f"public.set_player_options('{token}', true)"))
+    assert options["private"] is True and options["on_scoreboard"] is True
+    assert visible("games") == "0" and visible("puzzle_attempts") == "0"  # to everyone else
+    assert call(postgres, db, f"count(*) from public.my_games('{token}')") == "1"  # but not to Bishop
+    assert call(postgres, db, f"count(*) from public.my_puzzle_attempts('{token}')") == "1"
+    assert call(postgres, db, "count(*) from public.my_games('not-a-token')") == "0"
+    assert "Sign in again" in fails(postgres, db, "public.set_player_options('not-a-token', false)")
+
+    # Public again, but off the scoreboard: the games can be read, the name is listed as hidden.
+    options = json.loads(call(postgres, db, f"public.set_player_options('{token}', false, false)"))
+    assert options == {"name": "Bishop", "private": False, "on_scoreboard": False}
+    assert visible("games") == "1"
+    assert "Bishop" in call(postgres, db, "* from public.hidden_players()").splitlines()
+    call(postgres, db, f"public.set_player_options('{token}', p_on_scoreboard => true)")
+    assert "Bishop" not in call(postgres, db, "* from public.hidden_players()").splitlines()
+
+
 OLD_POLICY = """
 create table public.games (
   id uuid primary key, played_at timestamptz not null default now(), player text not null,
@@ -237,7 +269,8 @@ grant select, insert on public.games to anon, authenticated;
 
 def test_upgrading_an_older_database(postgres):
     # A database set up before names were locked, upgraded in order.
-    db = new_database(postgres, "upgrade-1.sql", "upgrade-2.sql", "upgrade-3.sql", "upgrade-4.sql", before=OLD_POLICY)
+    upgrades = [f"upgrade-{n}.sql" for n in range(1, 6)]
+    db = new_database(postgres, *upgrades, before=OLD_POLICY)
     functions = psql(
         postgres,
         db,
@@ -252,4 +285,6 @@ def test_upgrading_an_older_database(postgres):
     token = claim(postgres, db, "Mikayla", "queen")["token"]
     call(postgres, db, f"public.record_game('{token}', {game(hints=2, moves_uci='e2e4')})")
     assert psql(postgres, db, "select player, hints, moves_uci from public.games") == "Mikayla|2|e2e4"
-    psql(postgres, db, (SUPABASE / "upgrade-4.sql").read_text())  # safe to run again
+    assert call(postgres, db, "count(*) from public.games") == "1"  # readable, Mikayla isn't private
+    for name in ("upgrade-4.sql", "upgrade-5.sql"):
+        psql(postgres, db, (SUPABASE / name).read_text())  # safe to run again

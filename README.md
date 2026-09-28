@@ -143,8 +143,9 @@ If your tables were created from an older `games.sql`, also run the upgrades:
 then games still save, just without those details) and
 [`supabase/upgrade-2.sql`](supabase/upgrade-2.sql) (puzzle ratings; until then
 they stay in each browser), [`supabase/upgrade-3.sql`](supabase/upgrade-3.sql)
-(online games on the Friend tab) and [`supabase/upgrade-4.sql`](supabase/upgrade-4.sql)
-(the name lock; until then anyone can type any name).
+(online games on the Friend tab), [`supabase/upgrade-4.sql`](supabase/upgrade-4.sql)
+(the name lock; until then anyone can type any name) and
+[`supabase/upgrade-5.sql`](supabase/upgrade-5.sql) (the privacy switches below).
 
 ### Names and passwords
 
@@ -169,6 +170,21 @@ delete from public.players where name_key = lower('Their name');
 ```
 
 They then claim the name again with a new password.
+
+### Who sees your games
+
+Under **Playing as** on the Play tab, a signed-in player has two switches:
+
+- **Keep my games private**: nobody else can see your games, stats or
+  replays, and you don't appear on anyone else's Stats page. The database
+  enforces it: the public key can only read the games and puzzle attempts of
+  players who aren't private, and your own come back through `my_games` and
+  `my_puzzle_attempts`, which need your sign-in.
+- **Show me on the scoreboard**: turn it off and you're left out of other
+  people's Players ranking and totals, though your games can still be read.
+
+Either way you still see yourself on your own Stats page, marked so you know
+others don't.
 
 ### Playing a friend online
 
