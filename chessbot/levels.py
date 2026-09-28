@@ -68,7 +68,8 @@ class Level:
     number: int
     name: str
     elo: int
-    rank_depth: int | None = None  # lower levels: depth for rank_moves; 0 = a glance (see glance())
+    rank_depth: int | None = None  # lower levels: depth for rank_moves
+    glance_rate: float = 0.0  # lower levels: chance of judging the moves at a glance instead (see glance())
     temperature: float = 0.0  # lower levels: centipawns of randomness
     blunder_rate: float = 0.0  # lower levels: chance of a random legal move
     nodes: int | None = None  # upper levels: search node budget
@@ -88,7 +89,8 @@ LEVELS = [
         1,
         "Rookie",
         200,
-        rank_depth=0,
+        rank_depth=1,
+        glance_rate=1.0,
         temperature=150,
         blunder_rate=0.3,
         description="Moves almost at random and leaves pieces hanging. For your very first games.",
@@ -97,10 +99,11 @@ LEVELS = [
         2,
         "Novice",
         500,
-        rank_depth=0,
-        temperature=50,
+        rank_depth=1,
+        glance_rate=0.5,
+        temperature=60,
         blunder_rate=0.1,
-        description="Grabs whatever it can take, even when it loses it back, and leaves pieces hanging.",
+        description="Only sometimes checks what you can take back, so it still gives pieces away.",
     ),
     Level(
         3,
@@ -202,7 +205,8 @@ def choose_move(
     if level.blunder_rate and rng.random() < level.blunder_rate:
         move = rng.choice(list(board.legal_moves))
         return SearchResult(move, 0, 0, 0, time.monotonic() - start, [move])
-    if level.rank_depth == 0:
+    glanced = bool(level.glance_rate) and rng.random() < level.glance_rate
+    if glanced:
         ranked = glance(board)
     else:
         # Moves far worse than the best are almost never picked (five
@@ -213,8 +217,8 @@ def choose_move(
     best_score = ranked[0][1]
     weights = [math.exp((score - best_score) / level.temperature) for _, score in ranked]
     move, score = rng.choices(ranked, weights=weights)[0]
-    nodes = searcher.nodes if level.rank_depth else len(ranked)  # a glance looks at each move once
-    result = SearchResult(move, score, level.rank_depth, nodes, time.monotonic() - start, [move])
+    depth, nodes = (0, len(ranked)) if glanced else (level.rank_depth, searcher.nodes)  # a glance looks once
+    result = SearchResult(move, score, depth, nodes, time.monotonic() - start, [move])
     if on_iteration:
         on_iteration(result)
     return result
