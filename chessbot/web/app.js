@@ -1399,34 +1399,46 @@
     render();
   }
 
-  // A game's accuracy as a rating: about the rating of players who play that
-  // accurately (chessbot/game_rating.py). A guide to one game, not a rating.
+  // A game's accuracy as a rating: the rating of lichess players who average
+  // that accuracy (chessbot/game_rating.py). A guide to one game, not a rating.
+  // Returns { rating, label, edge }: label "~1450", or "<600" / "2200+" past the
+  // ends of the scale (edge "low" / "high"); null for too few moves.
   const GAME_RATING_MOVES = 8; // fewer moves say too little
   function gameRating(accuracy, moves) {
     const points = CONFIG.gameRating || [];
-    if (accuracy === null || accuracy === undefined || moves < GAME_RATING_MOVES || !points.length) return null;
-    if (accuracy <= points[0][0]) return points[0][1];
+    if (typeof accuracy !== "number" || moves < GAME_RATING_MOVES || !points.length) return null;
+    const [lowest, highest] = [points[0], points[points.length - 1]];
+    if (accuracy < lowest[0]) return { rating: lowest[1], label: `<${lowest[1]}`, edge: "low" };
+    if (accuracy > highest[0]) return { rating: highest[1], label: `${highest[1]}+`, edge: "high" };
     for (let i = 1; i < points.length; i++) {
       const [highAccuracy, highRating] = points[i];
       if (accuracy <= highAccuracy) {
         const [lowAccuracy, lowRating] = points[i - 1];
         const share = (accuracy - lowAccuracy) / (highAccuracy - lowAccuracy);
-        return Math.round((lowRating + share * (highRating - lowRating)) / 50) * 50;
+        const rating = Math.round((lowRating + share * (highRating - lowRating)) / 50) * 50;
+        return { rating, label: `~${rating}`, edge: null };
       }
     }
-    return points[points.length - 1][1];
+    return { rating: points[0][1], label: `~${points[0][1]}`, edge: null }; // a scale of one point
   }
 
   // Shows a review's game rating in the "review" or "viewer" panel.
   function showGameRating(prefix, summary, moves) {
-    const rating = gameRating(summary.accuracy, moves);
-    $(`${prefix}-rating-block`).hidden = rating === null;
-    $(`${prefix}-rating-note`).hidden = rating === null;
-    if (rating === null) return;
-    $(`${prefix}-rating`).textContent = `~${rating}`;
+    const game = gameRating(summary.accuracy, moves);
+    $(`${prefix}-rating-block`).hidden = game === null;
+    $(`${prefix}-rating-note`).hidden = game === null;
+    if (game === null) return;
+    $(`${prefix}-rating`).textContent = game.label;
+    const notes = {
+      low: `Below what lichess players rated ${game.rating} (rapid) average, the lowest rating measured.`,
+      high:
+        `Lichess players rated ${game.rating} and up (rapid) average about this; ` +
+        "the review can't tell stronger play apart.",
+    };
     $(`${prefix}-rating-note`).textContent =
-      `Players rated about ${rating} on lichess (rapid) average this accuracy, so that's roughly where ` +
-      "you'd be if you always played like this. One game's number swings a lot.";
+      (notes[game.edge] ||
+        `Players rated about ${game.rating} on lichess (rapid) average this accuracy, so that's roughly ` +
+          "where you'd be if you always played like this.") + " One game's number swings a lot.";
   }
 
   function reviewSummary(items) {
@@ -2260,16 +2272,16 @@
     });
   }
 
-  // "~1150" for an average accuracy over several games, or "–".
+  // "~1150" (or "<600", "2200+") for an average accuracy over several games, or "–".
   function gameRatingText(accuracy) {
-    const rating = typeof accuracy === "number" ? gameRating(accuracy, GAME_RATING_MOVES) : null;
-    return rating === null ? "–" : `~${rating}`;
+    const game = gameRating(accuracy, GAME_RATING_MOVES);
+    return game === null ? "–" : game.label;
   }
 
-  // "~1150" after a saved game's accuracy (the game's moves stand in for the number reviewed).
+  // "~1150" (or "<600", "2200+") after a saved game's accuracy (the game's moves stand in for the number reviewed).
   function gameRatingTag(g) {
-    const rating = typeof g.accuracy === "number" ? gameRating(g.accuracy, g.moves) : null;
-    return rating === null ? null : el("span", { class: "game-rating", text: `~${rating}`, title: "game rating" });
+    const game = gameRating(g.accuracy, g.moves);
+    return game === null ? null : el("span", { class: "game-rating", text: game.label, title: "game rating" });
   }
 
   function renderPlayer(p) {

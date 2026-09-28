@@ -54,7 +54,11 @@ setting until you choose):
   g4 to be taken", "Develops the knight") and splits the evaluation into its
   parts (material, piece activity, pawns, rooks, king safety). When a game
   ends, a review lists your biggest mistakes with the move you should have
-  played and why; click one to see it on the board.
+  played and why; click one to see it on the board. It also gives the game
+  a **game rating**: the lichess rapid rating of players who average the
+  accuracy you played with (measured on about 5,000 lichess players, see
+  [`chessbot/game_rating.py`](chessbot/game_rating.py)). One game's number
+  swings a lot; your player page shows the one for your average.
 - **Puzzles**: tactics taken from real games, picked to match your puzzle
   rating, which goes up when you solve one on the first try and down when you
   miss, use a hint or look at the solution.

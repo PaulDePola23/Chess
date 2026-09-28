@@ -132,40 +132,47 @@ def review(args: argparse.Namespace) -> None:
             print(json.dumps(result), flush=True)
 
 
-def monotone(values: list[float], weights: list[float]) -> list[float]:
-    """The closest non-decreasing sequence (pool adjacent violators, weighted)."""
-    blocks: list[list[float]] = []  # [mean, weight, length]
-    for value, weight in zip(values, weights, strict=True):
-        blocks.append([value, weight, 1])
-        while len(blocks) > 1 and blocks[-2][0] > blocks[-1][0]:
-            (a, wa, na), (b, wb, nb) = blocks.pop(-2), blocks.pop()
-            blocks.append([(a * wa + b * wb) / (wa + wb), wa + wb, na + nb])
-    return [mean for mean, _, length in blocks for _ in range(length)]
+def fit_curve(sides: list[tuple[int, float]]) -> list[float]:
+    """Least-squares a + b x + c x^2 through (rating, accuracy), x = rating / 1000: [a, b, c]."""
+    rows = [[1.0, rating / 1000, (rating / 1000) ** 2, accuracy] for rating, accuracy in sides]
+    system = [[sum(row[i] * row[j] for row in rows) for j in range(4)] for i in range(3)]
+    for i in range(3):  # Gauss-Jordan on the normal equations
+        system[i] = [value / system[i][i] for value in system[i]]
+        for k in range(3):
+            if k != i:
+                system[k] = [a - system[k][i] * b for a, b in zip(system[k], system[i], strict=True)]
+    return [row[3] for row in system]
 
 
 def report(args: argparse.Namespace) -> None:
-    by_band: dict[int, list[float]] = {}
+    sides: list[tuple[int, float]] = []
     for path in args.files:
         with open(path) as file:
-            for line in file:
-                side = json.loads(line)
-                by_band.setdefault(band_of(side["rating"]), []).append(side["accuracy"])
-    bands = sorted(band for band, values in by_band.items() if len(values) >= max(args.min_sides, 2))
-    means = [statistics.mean(by_band[band]) for band in bands]
-    fitted = monotone(means, [len(by_band[band]) for band in bands])
+            sides += [(side["rating"], side["accuracy"]) for side in map(json.loads, file)]
+    a, b, c = fit_curve(sides)
+
+    def curve(rating: float) -> float:
+        return a + b * rating / 1000 + c * (rating / 1000) ** 2
+
+    by_band: dict[int, list[float]] = {}
+    for rating, accuracy in sides:
+        by_band.setdefault(band_of(rating), []).append(accuracy)
     lines = [
-        "| band | sides | mean | sd | quartiles | monotone |",
+        f"{len(sides)} players. Curve: accuracy = {a:.3f} + {b:.3f} x + {c:.3f} x^2, x = rating / 1000",
+        "",
+        "| band | sides | mean | sd | quartiles | curve |",
         "|---|---|---|---|---|---|",
     ]
-    for band, mean, fit in zip(bands, means, fitted, strict=True):
+    for band in sorted(band for band, values in by_band.items() if len(values) >= max(args.min_sides, 2)):
         values = by_band[band]
         low, median, high = statistics.quantiles(values, n=4)
         lines.append(
-            f"| {band}-{band + BAND - 1} | {len(values)} | {mean:.1f} | {statistics.stdev(values):.1f}"
-            f" | {low:.1f} / {median:.1f} / {high:.1f} | {fit:.1f} |"
+            f"| {band}-{band + BAND - 1} | {len(values)} | {statistics.mean(values):.1f}"
+            f" | {statistics.stdev(values):.1f} | {low:.1f} / {median:.1f} / {high:.1f}"
+            f" | {curve(band + BAND / 2):.1f} |"
         )
-    points = [(round(fit, 1), band + BAND // 2) for band, fit in zip(bands, fitted, strict=True)]
-    lines += ["", "Points (monotone mean accuracy, band middle):", "", f"    {points}"]
+    points = [(round(curve(rating), 1), rating) for rating in range(args.low, args.high + 1, 200)]
+    lines += ["", "Points (accuracy on the curve, rating):", "", f"    {points}"]
     print("\n".join(lines))
 
 
@@ -186,6 +193,8 @@ def main() -> None:
     reporter = commands.add_parser("report", help="the accuracy of each rating band, as a Markdown table")
     reporter.add_argument("files", nargs="+")
     reporter.add_argument("--min-sides", type=int, default=30, help="leave out bands with fewer sides")
+    reporter.add_argument("--low", type=int, default=600, help="lowest rating of the points (default 600)")
+    reporter.add_argument("--high", type=int, default=2200, help="highest rating of the points (default 2200)")
     reporter.set_defaults(run=report)
     args = parser.parse_args()
     args.run(args)
