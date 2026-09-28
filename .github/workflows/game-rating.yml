@@ -1,0 +1,99 @@
+name: Game rating scale
+
+# Measures how accurately rated players play on lichess, as the website's
+# post-game review scores them (scripts/calibrate_game_rating.py): the points of
+# the game rating scale in chessbot/game_rating.py. It samples rapid and
+# classical games from a month of the public lichess database, reviews them on
+# several machines at once, and shows each rating band's accuracy on the run's
+# summary page. Start it from the Actions tab: Game rating scale -> Run workflow.
+
+on:
+  workflow_dispatch:
+    inputs:
+      month:
+        description: "Month of the lichess database (YYYY-MM)"
+        default: "2025-06"
+      per_band:
+        description: "Players per 100-point rating band"
+        default: "300"
+  push:
+    branches: [engine/game-rating-scale]
+
+permissions:
+  contents: read
+
+env:
+  MONTH: ${{ inputs.month || '2025-06' }}
+  PER_BAND: ${{ inputs.per_band || '300' }}
+
+jobs:
+  sample:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: |
+          pip install -e .
+          command -v zstdcat || sudo apt-get install -y --no-install-recommends zstd
+      - name: Sample
+        # The sampler stops reading once it has enough, which cuts off the download.
+        run: |
+          set +o pipefail
+          curl -sSL "https://database.lichess.org/standard/lichess_db_standard_rated_${MONTH}.pgn.zst" \
+            | zstdcat 2>/dev/null \
+            | python scripts/calibrate_game_rating.py sample --per-band "$PER_BAND" > sides.jsonl
+          test -s sides.jsonl
+          wc -l sides.jsonl
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sides
+          path: sides.jsonl
+
+  review:
+    needs: sample
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    strategy:
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: pip install -e .
+      - uses: actions/download-artifact@v4
+        with:
+          name: sides
+      - name: Review
+        run: |
+          python scripts/calibrate_game_rating.py review --shard "${{ matrix.shard }}/8" --workers "$(nproc)" \
+            < sides.jsonl > "reviewed-${{ matrix.shard }}.jsonl"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: reviewed-${{ matrix.shard }}
+          path: reviewed-${{ matrix.shard }}.jsonl
+
+  report:
+    needs: review
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: pip install -e .
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: reviewed-*
+          merge-multiple: true
+      - name: Report
+        run: python scripts/calibrate_game_rating.py report reviewed-*.jsonl | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Raw data (rating, accuracy, moves)
+        run: cat reviewed-*.jsonl | python -c "import json, sys; [print(s['rating'], s['accuracy'], s['moves']) for s in map(json.loads, sys.stdin)]"
