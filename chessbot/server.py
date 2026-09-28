@@ -28,6 +28,7 @@ from importlib import resources
 import chess.svg
 
 from . import __version__
+from .game_rating import POINTS as GAME_RATING_POINTS
 from .levels import DEFAULT_LEVEL, LEVELS
 from .search import Searcher
 from .webapi import engine_reply, explain, game_state, replay_game, review_move, suggest_move
@@ -70,6 +71,8 @@ def config_js(stats_url: str | None = None, stats_key: str | None = None, offlin
     config = {
         "levels": [level.as_dict() for level in LEVELS],
         "defaultLevel": DEFAULT_LEVEL,
+        # A game's accuracy as a rating, for the review (see game_rating.py).
+        "gameRating": [list(point) for point in GAME_RATING_POINTS],
         "stats": {"url": stats_url.rstrip("/"), "key": stats_key} if stats_url and stats_key else None,
         # Only the static site registers the service worker (see site.py).
         "offline": offline,
