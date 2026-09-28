@@ -42,6 +42,21 @@ def test_every_level_takes_a_free_queen_most_of_the_time(level):
     assert hits >= trials * (1 - level.blunder_rate) - (4 if trials > 1 else 0)
 
 
+def test_the_lowest_levels_fall_for_a_poisoned_pawn():
+    # Qxd5 or Qxf7+ wins a pawn and loses the queen to the recapture. Rookie and
+    # Novice judge a move by the board right after it, as beginners do, so they
+    # sometimes take; Casual and up see the recapture.
+    board = chess.Board("rnbqkbnr/pp2pppp/2p5/3p4/8/5Q2/PPPPPPPP/RNB1KBNR w KQkq - 0 3")
+
+    def queens_lost(number):
+        rng = random.Random(2)
+        picks = [choose_move(board, get_level(number), Searcher(), rng).best_move.uci() for _ in range(60)]
+        return sum(move in {"f3d5", "f3f7"} for move in picks)
+
+    assert queens_lost(2) >= 8
+    assert queens_lost(3) <= 3 and queens_lost(4) == 0
+
+
 def test_low_levels_vary_their_moves():
     board = chess.Board()
     searcher = Searcher()
