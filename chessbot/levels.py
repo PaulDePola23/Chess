@@ -59,7 +59,8 @@ from dataclasses import dataclass
 import chess
 
 from .book import book_move
-from .search import Searcher, SearchResult
+from .evaluation import evaluate
+from .search import MATE_SCORE, Searcher, SearchResult
 
 
 @dataclass(frozen=True)
@@ -67,7 +68,7 @@ class Level:
     number: int
     name: str
     elo: int
-    rank_depth: int | None = None  # lower levels: depth for rank_moves
+    rank_depth: int | None = None  # lower levels: depth for rank_moves; 0 = a glance (see glance())
     temperature: float = 0.0  # lower levels: centipawns of randomness
     blunder_rate: float = 0.0  # lower levels: chance of a random legal move
     nodes: int | None = None  # upper levels: search node budget
@@ -87,28 +88,28 @@ LEVELS = [
         1,
         "Rookie",
         200,
-        rank_depth=1,
-        temperature=80,
-        blunder_rate=0.12,
-        description="Often leaves pieces hanging. Good for your first games.",
+        rank_depth=0,
+        temperature=150,
+        blunder_rate=0.3,
+        description="Moves almost at random and leaves pieces hanging. For your very first games.",
     ),
     Level(
         2,
         "Novice",
         500,
-        rank_depth=1,
-        temperature=40,
-        blunder_rate=0.04,
-        description="Plays sensible moves, but still gives pieces away.",
+        rank_depth=0,
+        temperature=50,
+        blunder_rate=0.1,
+        description="Grabs whatever it can take, even when it loses it back, and leaves pieces hanging.",
     ),
     Level(
         3,
         "Casual",
         800,
-        rank_depth=2,
-        temperature=50,
-        blunder_rate=0.03,
-        description="Spots simple threats and misses most tactics.",
+        rank_depth=1,
+        temperature=80,
+        blunder_rate=0.12,
+        description="Sees what you can take next move, but misses forks, pins and plans.",
     ),
     Level(
         4,
@@ -149,6 +150,28 @@ LEVELS = [
 DEFAULT_LEVEL = 3
 
 
+def glance(board: chess.Board) -> list[tuple[chess.Move, int]]:
+    """Score each legal move by how the board looks right after it, best first.
+
+    Nothing looks at the reply, so a defended pawn looks free and a piece left
+    where it can be taken looks safe: how beginners see the board, and how
+    Rookie and Novice do.
+    """
+    scored = []
+    for move in board.legal_moves:
+        board.push(move)
+        if board.is_checkmate():
+            score = MATE_SCORE
+        elif board.is_stalemate() or board.is_insufficient_material():
+            score = 0
+        else:
+            score = -evaluate(board)
+        board.pop()
+        scored.append((move, score))
+    scored.sort(key=lambda item: item[1], reverse=True)
+    return scored
+
+
 def get_level(number: int) -> Level:
     for level in LEVELS:
         if level.number == number:
@@ -179,15 +202,19 @@ def choose_move(
     if level.blunder_rate and rng.random() < level.blunder_rate:
         move = rng.choice(list(board.legal_moves))
         return SearchResult(move, 0, 0, 0, time.monotonic() - start, [move])
-    # Moves far worse than the best are almost never picked (five
-    # "temperatures" is under 1%), so don't spend time scoring them exactly.
-    ranked = searcher.rank_moves(board, level.rank_depth, margin=int(min(5 * level.temperature, 400)))
+    if level.rank_depth == 0:
+        ranked = glance(board)
+    else:
+        # Moves far worse than the best are almost never picked (five
+        # "temperatures" is under 1%), so don't spend time scoring them exactly.
+        ranked = searcher.rank_moves(board, level.rank_depth, margin=int(min(5 * level.temperature, 400)))
     if not ranked:
         return searcher.search(board, depth=1)
     best_score = ranked[0][1]
     weights = [math.exp((score - best_score) / level.temperature) for _, score in ranked]
     move, score = rng.choices(ranked, weights=weights)[0]
-    result = SearchResult(move, score, level.rank_depth, searcher.nodes, time.monotonic() - start, [move])
+    nodes = searcher.nodes if level.rank_depth else len(ranked)  # a glance looks at each move once
+    result = SearchResult(move, score, level.rank_depth, nodes, time.monotonic() - start, [move])
     if on_iteration:
         on_iteration(result)
     return result
